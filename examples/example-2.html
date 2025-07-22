@@ -1,0 +1,351 @@
+<!DOCTYPE html><!-- noSheetLibrary ---><html lang="en" dir="ltr">
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<meta name="color-scheme" content="dark light">
+
+<title>Example 2 - Multiple Facets &amp; References | NoSheet</title><!-- Stylesheets ---><link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/site.css" />
+<!-- JS Content --><script src="js/examples/utils.js"></script><script src="js/examples/simple_alpine_table.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@formulajs/formulajs/lib/browser/formula.min.js" crossorigin="anonymous"></script></head>
+<body class="min-h-screen"><div id="fluidity-theme-container">
+    <main class="flex-1 relative z-[1]"><div class="container mt-1 mx-auto px-2 py-2 md:px-2 md:py-4 lg:px-4 lg:py-8 min-h-screen">
+    
+    <header class="md:mb-4 lg:mb-8">
+      <h1 class="fluidity-page-title text-4xl group mb-2 md:mb-4 lg:mb-8">
+        <span class="relative inline-block">
+          Example 2 - Multiple Facets &amp; References
+          <span class="fluidity-page-title-line"></span>
+        </span>
+      </h1>
+    </header>
+
+    
+    <div class="gap-4 lg:gap-8">
+      
+      <div id="main-content" class="col-span-1 lg:col-span-2 order-2 lg:order-1">
+        <div
+          class="relative overflow-hidden
+                bg-gradient-to-br from-white/95 to-neutral-50/90
+                dark:from-neutral-900/95 dark:to-neutral-800/90
+                rounded-xl px-4 md:px-8 py-3 md:py-6
+                border border-neutral-200/80 dark:border-neutral-700/80
+                backdrop-blur-md
+                shadow-lg shadow-sky-100/20 dark:shadow-sky-900/20
+                transition-all duration-300 ease-out">
+          <article class="prose prose-neutral dark:prose-invert">
+            
+
+    
+<script>
+const SUM = formulajs.SUM;
+var percent_format  = new Intl.NumberFormat(undefined, {style: "percent"});
+
+//
+// Load the noSheet library, facets and create and populate a table
+//    
+var whenNoSheetReady = new Promise( (resolve) => {
+
+    (async () => {
+
+        //the library
+        const {defineStack, createTable} = await import('/js/nosheet.min.mjs');
+
+        //the facets
+        const {default: raw_materials} = await import('/js/examples/facets/raw_materials.mjs');
+        const {default: lineitems}     = await import('/js/examples/facets/lineitems.mjs');
+        const {default: gross_margin}  = await import('/js/examples/facets/gross_margin.mjs');        
+
+        //the data
+        const response = await fetch('/js/examples/data/example_1.json');
+        const data = response.ok ? await response.json() : [];
+
+        //
+        //create and define the table
+        //        
+        let new_table = createTable(['item', 'steel_m2', 'unit_offer', 'quantity'], raw_materials, lineitems, gross_margin);
+
+        //The raw_materials facet requires two external references; manufacturing_cost_per_m2 and average_steel_cost_m2.
+        //Here we set average_steel_cost_m2 to be a constant
+        //manufacturing_cost_per_m2 is set dynamically using Alpine
+        new_table.setReferences( function() {
+
+            this.average_steel_cost_m2 = 0.2;
+        });    
+
+        //
+        //populate the table
+        //
+        new_table.load(data);
+
+        resolve( new_table );
+    })()        
+});
+
+function referenceHandler(referenceName){
+    return {
+
+        init() {
+
+            //watch the store for reference initialization
+            this.$watch(`$store.${referenceName}`,(newHandler, oldHandler)=>{
+                this.value = newHandler.value;
+            })
+        },
+        value: '',
+        input: {
+            ['@input'](event) {
+                Alpine.store(referenceName).value = +event.srcElement.value;
+            },
+        },        
+    };                   
+};
+
+//
+//Plumb in Alpine
+//
+document.addEventListener('alpine:init', () => {
+
+    console.log('alpine:init');
+    Alpine.store('lineitemsTable', {});
+
+    whenNoSheetReady.then( (theTable) => {
+
+        console.log('whenNoSheetReady');
+
+        Alpine.store('low_margin_threshold', theTable.getReferenceHandle('low_margin_threshold', 30) );
+        Alpine.store('manufacturing_cost_per_m2', theTable.getReferenceHandle('manufacturing_cost_per_m2', 0.3) );
+
+        theTable.calculate();        
+
+        //update the store with the loaded nosheet table
+        Alpine.store('lineitemsTable', theTable);
+    });
+});       
+</script>
+
+<div class="min-h-screen">
+<div class="container mx-auto w-full h-full">
+    <div class="max-w-screen-lg mx-auto w-full h-full flex flex-col items-center justify-center">
+
+    <h2>Extending the Simple Quote Calculator with additional facets</h2>
+
+    <div class="grid grid-cols-2 gap-4 justify-items-left w-full">
+        <div class="flex px-4 py-2">
+            <div>
+                <p class="justify-normal">Change the manufacturing cost for all line items by adjusting the <code>manufacturing_cost_per_m2</code> parameter in the <a href="#raw_materials">raw_materials</a> facet</p>
+            </div>
+        </div>
+
+        <div class="flex px-4 py-2">
+            <div>
+                <p>Set a minimum Margin Threshold for the quote through the <code>low_margin_threshold</code> parameter in the <a href="#gross_margin">gross_margin</a> facet</p>                    
+            </div>
+        </div>
+    </div>     
+
+    <div class="grid grid-cols-2 gap-4 justify-items-left w-full">
+        <div class="flex px-4">
+            <div>
+                <label for="Manufacturing_Cost">Manufacturing Cost:</label>
+                <input id="Manufacturing_Cost" x-data="referenceHandler('manufacturing_cost_per_m2')" x-model="value" type="number" min="0" max="100" step="0.1" x-bind="input" class="text-right w-12 border-gray-200 border-2">            
+                <label for="Manufacturing_Cost">per m<sup>2</sup></label>
+            </div>
+        </div>
+
+        <div class="flex px-4">
+            <div>
+                <label for="Margin_Threshold">Margin Threshold:</label>
+                <input id="Margin_Threshold" x-data="referenceHandler('low_margin_threshold')" x-model="value" type="number" min="0" max="100" x-bind="input" class="text-right w-12 border-gray-200 border-2">            
+            </div>
+        </div>
+    </div>        
+
+    <div x-data="simpleNoSheetTable('lineitemsTable')" class="p-5 w-full flex flex-col">
+        <table class="table-fixed" width="100%" :class="storeId" x-data="{columns:[]}">
+            <thead class="border-b-2">
+                <tr class="text-center">
+                    <th x-init="columns.push('item')" class="w-2/6 px-4 py-2 text-left">Item</th>
+                    <th x-init="columns.push('steel_m2')" class="px-4 py-2">Steel m<sup>2</sup></th>
+                    <th x-init="columns.push('unit_cost')" class="px-4 py-2">Item Cost</th>
+                    <th x-init="columns.push('unit_offer')" class="px-4 py-2">Unit Price</th>
+                    <th x-init="columns.push('quantity')" class="px-4 py-2">Quantity</th>
+                    <th x-init="columns.push('line_cost')" class="px-4 py-2">Line Cost</th>
+                    <th x-init="columns.push('line_offer')" class="px-4 py-2">Line Offer</th>
+                    <th x-init="columns.push('gross_margin')" class="px-4 py-2">Gross Margin</th>
+                </tr>    
+            </thead>
+            <tbody>
+                <template x-for="(item, row_index) in items" :key="row_index">
+                    <tr :id="`${storeId}-row[${row_index}]`" class="hover:bg-gray-200 dark:hover:bg-gray-900 text-xs">
+                        <template x-for="(column_name, html_column_index) in columns">
+                            <td x-data="{column_index: storedTable.columnIndex(column_name)}" class="py-3" :class="`col_${column_name}`" :id="`${storeId}_cell[${row_index}][${column_index}]`">
+
+                                <template x-if="[1,2,3].includes(column_index)">
+                                    <input type="number" min="0" :value="item[column_index]" @input="setCellValue(row_index, column_index, +$el.value)" class="text-right w-5/6 ml-2 border-gray-200 border-2">
+                                </template>
+                                
+                                <template x-if="!column_index">
+                                    <!--Don't update on calculation-->
+                                    <span x-text="item[column_index]"></span>                                            
+                                </template>                                        
+
+                                <template x-if="[4,5,6].includes(column_index)">
+                                    <!--Update on calculation--> <!-- calculation may occur during load/unload in which case items[row_index] may be 'undefined' -->
+                                    <div x-text="item[column_index].toFixed(2)" x-init="$watch('calculationTick', _ => $el.innerHTML = items[row_index]?.[column_index].toFixed(2))" class="text-right"></div>                                            
+                                </template>                                        
+
+                                <template x-if="column_index == 7">
+                                    <!--Update on calculation--> <!-- calculation may occur during load/unload in which case items[row_index] may be 'undefined' -->
+                                    <div x-text="percent_format.format(item[column_index])" x-init="$watch('calculationTick', _ => $el.innerHTML = percent_format.format(items[row_index]?.[column_index]))" class="text-right"></div>                                            
+                                </template>                                        
+
+                            </td>
+                        </template>
+                    </tr>
+                </template>
+                <tr x-show="isEmpty">
+                    <td colspan="5" class="text-center py-3 text-gray-900 text-sm">No matching records found.</td>
+                </tr>
+            </tbody>
+            <tfoot class="border-t-4 text-gray-800">    
+                <tr>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th>
+                        <div x-data="aggregate('total_cost')" x-text="Number(value).toFixed(2)" class="text-right"></div>
+                    </th>
+                    <th>
+                        <div x-data="aggregate('total_offer')" x-text="Number(value).toFixed(2)" class="text-right"></div>
+                    </th>
+                    <th></th>
+                </tr>
+                <tr class="border-t-4 text-gray-800">
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th>Profit:</th>
+                    <th>
+                        <div x-data="aggregate('profit')" x-text="Number(value).toFixed(2)" class="text-right"></div>
+                    </th>
+                    <th>
+                        <span x-data="aggregate('low_margin_warning')" :class="value ? 'text-red-600' : 'text-green-600'">
+                            <div x-data="aggregate('gross_margin', percent_format)" x-text="value" class="text-right"></div>
+                        </span>
+                    </th>
+                </tr>
+
+            </tfoot>
+        </table>
+
+        <div>
+            <button @click="storedTable.load(getRandomData(), 'random_data');reset();" class="bg-transparent hover:bg-gray-600 font-semibold hover:text-white py-2 px-4 border-gray-300 hover:border-transparent border-2 rounded">Load Random Data</button>            
+            <button @click="storedTable.unload('random_data');reset();" class="bg-transparent hover:bg-gray-600 font-semibold hover:text-white py-2 px-4 border-gray-300 hover:border-transparent border-2 rounded">Unload All Random Data</button>
+        </div>
+    </div> <!-- simpleTable()-->
+
+        <div class="container mx-auto w-full h-full">
+<h3 id="init">Create and populate the noSheet table:</h3>                        
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl">    <span class="c1">//
+</span></span></span><span class="line"><span class="ln"> 2</span><span class="cl"><span class="c1"></span>    <span class="c1">//create and define the table
+</span></span></span><span class="line"><span class="ln"> 3</span><span class="cl"><span class="c1"></span>    <span class="c1">//        
+</span></span></span><span class="line"><span class="ln"> 4</span><span class="cl"><span class="c1"></span>    <span class="kd">let</span> <span class="nx">new_table</span> <span class="o">=</span> <span class="nx">createTable</span><span class="p">([</span><span class="s1">&#39;item&#39;</span><span class="p">,</span> <span class="s1">&#39;steel_m2&#39;</span><span class="p">,</span> <span class="s1">&#39;unit_offer&#39;</span><span class="p">,</span> <span class="s1">&#39;quantity&#39;</span><span class="p">],</span> <span class="nx">raw_materials</span><span class="p">,</span> <span class="nx">lineitems</span><span class="p">,</span> <span class="nx">gross_margin</span><span class="p">);</span>
+</span></span><span class="line"><span class="ln"> 5</span><span class="cl">
+</span></span><span class="line"><span class="ln"> 6</span><span class="cl">    <span class="c1">//The raw_materials facet requires two external references; manufacturing_cost_per_m2 and average_steel_cost_m2.
+</span></span></span><span class="line"><span class="ln"> 7</span><span class="cl"><span class="c1"></span>    <span class="c1">//Here we set average_steel_cost_m2 to be a constant
+</span></span></span><span class="line"><span class="ln"> 8</span><span class="cl"><span class="c1"></span>    <span class="c1">//manufacturing_cost_per_m2 is set dynamically using Alpine    
+</span></span></span><span class="line"><span class="ln"> 9</span><span class="cl"><span class="c1"></span>    <span class="nx">new_table</span><span class="p">.</span><span class="nx">setReferences</span><span class="p">(</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+</span></span><span class="line"><span class="ln">10</span><span class="cl">
+</span></span><span class="line"><span class="ln">11</span><span class="cl">        <span class="k">this</span><span class="p">.</span><span class="nx">average_steel_cost_m2</span> <span class="o">=</span> <span class="mf">0.2</span><span class="p">;</span>
+</span></span><span class="line"><span class="ln">12</span><span class="cl">    <span class="p">});</span>    
+</span></span><span class="line"><span class="ln">13</span><span class="cl">
+</span></span><span class="line"><span class="ln">14</span><span class="cl">    <span class="c1">//
+</span></span></span><span class="line"><span class="ln">15</span><span class="cl"><span class="c1"></span>    <span class="c1">//populate the table
+</span></span></span><span class="line"><span class="ln">16</span><span class="cl"><span class="c1"></span>    <span class="c1">//
+</span></span></span><span class="line"><span class="ln">17</span><span class="cl"><span class="c1"></span>    <span class="nx">new_table</span><span class="p">.</span><span class="nx">load</span><span class="p">(</span><span class="nx">data</span><span class="p">);</span></span></span></code></pre></div>
+<h3 id="raw_materials">The raw_materials facet:</h3>
+
+
+
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln">1</span><span class="cl"><span class="s2">&#34;use strict&#34;</span><span class="p">;</span>
+</span></span><span class="line"><span class="ln">2</span><span class="cl"><span class="cm">/**
+</span></span></span><span class="line"><span class="ln">3</span><span class="cl"><span class="cm">Calculate line item cost from raw materials
+</span></span></span><span class="line"><span class="ln">4</span><span class="cl"><span class="cm">*/</span>
+</span></span><span class="line"><span class="ln">5</span><span class="cl"><span class="kr">export</span> <span class="k">default</span> <span class="kd">function</span><span class="p">(</span><span class="nx">table</span><span class="p">,</span> <span class="nx">row</span><span class="p">,</span> <span class="nx">refs</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="ln">6</span><span class="cl">
+</span></span><span class="line"><span class="ln">7</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">unit_cost</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">row</span><span class="p">.</span><span class="nx">steel_m2</span> <span class="o">*</span> <span class="p">(</span><span class="nx">refs</span><span class="p">.</span><span class="nx">manufacturing_cost_per_m2</span> <span class="o">+</span> <span class="nx">refs</span><span class="p">.</span><span class="nx">average_steel_cost_m2</span><span class="p">);</span>
+</span></span><span class="line"><span class="ln">8</span><span class="cl"><span class="p">};</span></span></span></code></pre></div>
+<h3>The lineitems facet:</h3>
+
+
+
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl"><span class="s2">&#34;use strict&#34;</span><span class="p">;</span>
+</span></span><span class="line"><span class="ln"> 2</span><span class="cl"><span class="cm">/**
+</span></span></span><span class="line"><span class="ln"> 3</span><span class="cl"><span class="cm">A simple invoice/quotation calculator
+</span></span></span><span class="line"><span class="ln"> 4</span><span class="cl"><span class="cm">*/</span>
+</span></span><span class="line"><span class="ln"> 5</span><span class="cl"><span class="kr">export</span> <span class="k">default</span> <span class="kd">function</span><span class="p">(</span><span class="nx">table</span><span class="p">,</span> <span class="nx">row</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="ln"> 6</span><span class="cl">
+</span></span><span class="line"><span class="ln"> 7</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">line_cost</span>     <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">row</span><span class="p">.</span><span class="nx">quantity</span> <span class="o">*</span> <span class="nx">row</span><span class="p">.</span><span class="nx">unit_cost</span><span class="p">;</span>    
+</span></span><span class="line"><span class="ln"> 8</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">line_offer</span>    <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">row</span><span class="p">.</span><span class="nx">quantity</span> <span class="o">*</span> <span class="nx">row</span><span class="p">.</span><span class="nx">unit_offer</span><span class="p">;</span>
+</span></span><span class="line"><span class="ln"> 9</span><span class="cl">
+</span></span><span class="line"><span class="ln">10</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">total_quantity</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;quantity&#39;</span><span class="p">));</span>
+</span></span><span class="line"><span class="ln">11</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">total_cost</span>     <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;line_cost&#39;</span><span class="p">));</span>
+</span></span><span class="line"><span class="ln">12</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">total_offer</span>    <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;line_offer&#39;</span><span class="p">));</span>
+</span></span><span class="line"><span class="ln">13</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">profit</span>         <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">table</span><span class="p">.</span><span class="nx">total_offer</span> <span class="o">-</span> <span class="nx">table</span><span class="p">.</span><span class="nx">total_cost</span><span class="p">;</span>
+</span></span><span class="line"><span class="ln">14</span><span class="cl"><span class="p">};</span></span></span></code></pre></div>
+<h3 id="gross_margin">The gross_margin facet:</h3>    
+
+
+
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl"><span class="s2">&#34;use strict&#34;</span><span class="p">;</span>
+</span></span><span class="line"><span class="ln"> 2</span><span class="cl"><span class="cm">/**
+</span></span></span><span class="line"><span class="ln"> 3</span><span class="cl"><span class="cm"> * Calculate the gross margin for line items and for the whole table
+</span></span></span><span class="line"><span class="ln"> 4</span><span class="cl"><span class="cm"> * 
+</span></span></span><span class="line"><span class="ln"> 5</span><span class="cl"><span class="cm"> * @param {*} table     Table query object
+</span></span></span><span class="line"><span class="ln"> 6</span><span class="cl"><span class="cm"> * @param {*} row       The table row
+</span></span></span><span class="line"><span class="ln"> 7</span><span class="cl"><span class="cm"> * @param {*} refs      External references
+</span></span></span><span class="line"><span class="ln"> 8</span><span class="cl"><span class="cm"> */</span>
+</span></span><span class="line"><span class="ln"> 9</span><span class="cl"><span class="kr">export</span> <span class="k">default</span> <span class="kd">function</span><span class="p">(</span><span class="nx">table</span><span class="p">,</span> <span class="nx">row</span><span class="p">,</span> <span class="nx">refs</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="ln">10</span><span class="cl">
+</span></span><span class="line"><span class="ln">11</span><span class="cl">    <span class="cm">/**
+</span></span></span><span class="line"><span class="ln">12</span><span class="cl"><span class="cm">     * The row Gross Margin
+</span></span></span><span class="line"><span class="ln">13</span><span class="cl"><span class="cm">     * @returns number
+</span></span></span><span class="line"><span class="ln">14</span><span class="cl"><span class="cm">     */</span>    
+</span></span><span class="line"><span class="ln">15</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">gross_margin</span>  <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="mi">1</span> <span class="o">-</span> <span class="p">(</span><span class="nx">row</span><span class="p">.</span><span class="nx">unit_cost</span> <span class="o">/</span> <span class="nx">row</span><span class="p">.</span><span class="nx">unit_offer</span><span class="p">);</span>
+</span></span><span class="line"><span class="ln">16</span><span class="cl">
+</span></span><span class="line"><span class="ln">17</span><span class="cl">    <span class="cm">/**
+</span></span></span><span class="line"><span class="ln">18</span><span class="cl"><span class="cm">     * The total Gross Margin
+</span></span></span><span class="line"><span class="ln">19</span><span class="cl"><span class="cm">     * @returns number
+</span></span></span><span class="line"><span class="ln">20</span><span class="cl"><span class="cm">     */</span>    
+</span></span><span class="line"><span class="ln">21</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">gross_margin</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="mi">1</span> <span class="o">-</span> <span class="p">(</span><span class="nx">table</span><span class="p">.</span><span class="nx">total_cost</span> <span class="o">/</span> <span class="nx">table</span><span class="p">.</span><span class="nx">total_offer</span><span class="p">);</span>
+</span></span><span class="line"><span class="ln">22</span><span class="cl">
+</span></span><span class="line"><span class="ln">23</span><span class="cl">    <span class="cm">/**
+</span></span></span><span class="line"><span class="ln">24</span><span class="cl"><span class="cm">     * Returns true if the total Gross Margin is below the system threshold
+</span></span></span><span class="line"><span class="ln">25</span><span class="cl"><span class="cm">     * @returns boolean
+</span></span></span><span class="line"><span class="ln">26</span><span class="cl"><span class="cm">     */</span>    
+</span></span><span class="line"><span class="ln">27</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">low_margin_warning</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">table</span><span class="p">.</span><span class="nx">gross_margin</span> <span class="o">&lt;=</span> <span class="nx">refs</span><span class="p">.</span><span class="nx">low_margin_threshold</span> <span class="o">/</span> <span class="mi">100</span><span class="p">;</span>
+</span></span><span class="line"><span class="ln">28</span><span class="cl"><span class="p">};</span></span></span></code></pre></div>
+        </div>
+
+    </div>
+</div>
+
+
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>
+
+
+
+          </article>
+
+          
+          <div class="fluidity-decorative-gradient-line"></div>
+        </div>
+      </div>
+    </div>
+  </div></main>
+  </div></body>
+</html>
