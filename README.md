@@ -17,7 +17,7 @@ Absolutely nothing! They are great killer apps; who hasn't used Excel or Google 
 
 They are *not so great*, however, when they are used as software libraries for the purpose of embedding calculations within applications or web front ends.
 
-## Show me why ... {#show-me-why}
+## Show me why ...
 
 Lets consider a fairly basic table like the one below. It might be from an invoice or quote; each line item has a **cost** and a **quantity** which are multiplied to give a **total**. The **quantity** and **total** columns are also totaled and finally the average unit cost of each line item is calculated (for no good reason other than to use an Excel function other than `SUM`)
 
