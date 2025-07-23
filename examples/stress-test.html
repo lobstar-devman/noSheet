@@ -1,0 +1,253 @@
+<!DOCTYPE html><!-- noSheetLibrary ---><html lang="en" dir="ltr">
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<meta name="color-scheme" content="dark light">
+
+<title>Stress Test | NoSheet</title><!-- Stylesheets ---><link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/site.css" />
+<!-- JS Content --><script src="js/examples/utils.js"></script><script src="js/examples/simple_alpine_table.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@formulajs/formulajs/lib/browser/formula.min.js" crossorigin="anonymous"></script>
+<script src="https://cors-anywhere.herokuapp.com/https://www.gstatic.com/charts/loader.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/charts/loader.js" crossorigin="anonymous"></script></head>
+<body class="min-h-screen"><div id="fluidity-theme-container">
+    <main class="flex-1 relative z-[1]"><div class="container mt-1 mx-auto px-2 py-2 md:px-2 md:py-4 lg:px-4 lg:py-8 min-h-screen">
+    
+    <header class="md:mb-4 lg:mb-8">
+      <h1 class="fluidity-page-title text-4xl group mb-2 md:mb-4 lg:mb-8">
+        <span class="relative inline-block">
+          Stress Test
+          <span class="fluidity-page-title-line"></span>
+        </span>
+      </h1>
+    </header>
+
+    
+    <div class="gap-4 lg:gap-8">
+      
+      <div id="main-content" class="col-span-1 lg:col-span-2 order-2 lg:order-1">
+        <div
+          class="relative overflow-hidden
+                bg-gradient-to-br from-white/95 to-neutral-50/90
+                dark:from-neutral-900/95 dark:to-neutral-800/90
+                rounded-xl px-4 md:px-8 py-3 md:py-6
+                border border-neutral-200/80 dark:border-neutral-700/80
+                backdrop-blur-md
+                shadow-lg shadow-sky-100/20 dark:shadow-sky-900/20
+                transition-all duration-300 ease-out">
+          <article class="prose prose-neutral dark:prose-invert">
+            
+
+    
+<script>
+//
+// Load the noSheet library, facets and create and populate a table
+//    
+var whenNoSheetReady = new Promise( (resolve) => {
+
+    (async () => {
+
+        //the library
+        const {createTable} = await import('/js/nosheet.min.mjs');
+
+        let stress_table = createTable(
+                                        ['seed'], 
+                                        function(table, row, refs) {
+                                            
+                                            for(let i = 1; i <= refs.columns; i++){
+
+                                                row[i] = () => (row.seed + i)/refs.factor;
+                                            }
+                                        }
+                                    );
+
+        stress_table.setReferences( function() {
+
+            this.factor = 1/3;
+        });    
+
+        resolve( stress_table );
+    })()        
+});
+
+//
+//Plumb in Alpine
+//
+document.addEventListener('alpine:init', () => {
+
+    console.log('alpine:init');
+
+    whenNoSheetReady.then( (theTable) => {
+
+        console.log('whenNoSheetReady');
+
+        let column_reference = theTable.getReferenceHandle('columns', 10);
+
+        Alpine.store('noSheetTable', {
+
+            timerId : 0,
+            samples : [],
+            profile(rows, columns, max_samples) {
+
+                this.samples = [];    
+                clearInterval(this.timerId);
+
+                theTable.unload();
+                theTable.load( Array.from({length: rows}, _ => [Math.random()]) );
+
+                //this will force a recalc
+                column_reference.value = columns;
+
+                this.timerId = window.setTimeout( 
+                                            (obj) => obj.calculate(max_samples), 
+                                            200,
+                                            this
+                                );
+            },
+
+            calculate(max_samples){
+
+                //this will force a recalculation
+                let mark = window.performance.now();
+
+                theTable.calculate();
+
+                this.samples.push([window.performance.now() - mark]);
+
+                if( this.samples.length > max_samples){
+
+                    this.samples.shift();
+                }
+
+                drawChart();
+
+                this.timerId = window.setTimeout( 
+                                            (obj) => obj.calculate(max_samples), 
+                                            200,
+                                            this
+                                );
+            }
+        });
+
+        //https://developers.google.com/chart/interactive/docs/gallery/histogram
+    });
+
+    google.charts.load("current", {packages:["corechart"]});
+    google.charts.setOnLoadCallback(drawChart);
+
+    var options = {
+        legend: { position: 'none' },
+        colors: ['#4285F4'],
+
+        chartArea: { width: '90%' },
+        hAxis: {
+            viewWindowMode: 'pretty',
+            title: 'execution time in ms',
+            format: '#.#',
+            slantedTextAngle : 75,
+            textStyle: {
+                fontSize: 12
+            },
+            titleTextStyle: {
+                italic: false,
+                fontSize: 14
+            }
+        },
+        vAxis :{
+            title: 'count',
+            titleTextStyle: {
+                italic: false,
+                fontSize: 14
+            }
+        },
+        bar: { gap: 0 },
+
+        histogram: {
+            bucketSize: 0.01,
+            maxNumBuckets: 100,
+            minValue: 0,
+            maxValue: 1
+        }
+    };
+
+    function drawChart() {
+        /*        
+        https://developers-dot-devsite-v2-prod.appspot.com/chart/interactive/docs/gallery/histogram_f074295fabe49e9cdca3f755b6d6058a2370c392cadbdfa48e4920592cd1e2e9.frame
+        https://developers.google.com/chart/interactive/docs/gallery/histogram
+        */        
+
+        var data = new google.visualization.DataTable();
+
+        data.addColumn('number', 'Time(ms)');
+        data.addRows( Alpine.store('noSheetTable')?.samples??[] );
+
+        var chart = new google.visualization.Histogram(document.getElementById('chart_div'));
+        chart.draw(data, options);
+    }
+});       
+
+</script>
+
+<div class="min-h-screen">
+<div class="container mx-auto w-full h-full">
+    <div class="max-w-screen-lg mx-auto w-full h-full flex flex-col items-center justify-center">
+
+        <h2>Stress Test</h2>
+
+        <span x-data="{rows:1000, columns:100, samples:1000}">
+            <div class="grid grid-cols-2 gap-4 justify-items-auto w-full">
+
+                <div class="flex px-4">
+                    <div>
+                        <label for="columns">Columns:</label>
+                        <input id="columns" x-model.number="columns" type="number" min="1" class="text-right w-14 border-gray-200 border-2">            
+                        <label for="rows">Rows:</label>
+                        <input id="rows" x-model.number="rows" type="number" min="1" class="text-right w-14 border-gray-200 border-2">            
+                    </div>
+                </div>
+
+                <div class="flex px-4">
+                    <label for="samples">Max Samples:</label>
+                    <input id="samples" x-model.number="samples" type="number" min="1" class="text-right w-18 border-gray-200 border-2">            
+                    &nbsp;
+                    <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold px-4 rounded" x-data="{title: 'Start'}" @click="$store.noSheetTable.profile(rows, columns, samples); title='Restart';" x-text="title"></button>                        
+                </div>
+            </div>        
+        </span>
+
+        <div class="container mx-auto w-full h-full">
+
+            <h3 class="text-center">Performance Histogram</h3>                        
+            <div id="chart_div"></div>
+        </div>
+
+        <div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl"><span class="kd">let</span> <span class="nx">stress_table</span> <span class="o">=</span> <span class="nx">createTable</span><span class="p">(</span>
+</span></span><span class="line"><span class="ln"> 2</span><span class="cl">                        <span class="p">[</span><span class="s1">&#39;seed&#39;</span><span class="p">],</span> 
+</span></span><span class="line"><span class="ln"> 3</span><span class="cl">                        <span class="kd">function</span><span class="p">(</span><span class="nx">table</span><span class="p">,</span> <span class="nx">row</span><span class="p">,</span> <span class="nx">refs</span><span class="p">)</span> <span class="p">{</span>                                    
+</span></span><span class="line"><span class="ln"> 4</span><span class="cl">                            <span class="k">for</span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;=</span> <span class="nx">refs</span><span class="p">.</span><span class="nx">columns</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">){</span>
+</span></span><span class="line"><span class="ln"> 5</span><span class="cl">                                <span class="nx">row</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="p">(</span><span class="nx">row</span><span class="p">.</span><span class="nx">seed</span> <span class="o">+</span> <span class="nx">i</span><span class="p">)</span><span class="o">/</span><span class="nx">refs</span><span class="p">.</span><span class="nx">factor</span><span class="p">;</span>
+</span></span><span class="line"><span class="ln"> 6</span><span class="cl">                            <span class="p">}</span>
+</span></span><span class="line"><span class="ln"> 7</span><span class="cl">                        <span class="p">}</span>
+</span></span><span class="line"><span class="ln"> 8</span><span class="cl">                    <span class="p">);</span>
+</span></span><span class="line"><span class="ln"> 9</span><span class="cl">
+</span></span><span class="line"><span class="ln">10</span><span class="cl"><span class="nx">stress_table</span><span class="p">.</span><span class="nx">setReferences</span><span class="p">(</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+</span></span><span class="line"><span class="ln">11</span><span class="cl">    <span class="k">this</span><span class="p">.</span><span class="nx">factor</span> <span class="o">=</span> <span class="mi">1</span><span class="o">/</span><span class="mi">3</span><span class="p">;</span>
+</span></span><span class="line"><span class="ln">12</span><span class="cl"><span class="p">});</span>    
+</span></span></code></pre></div>
+    </div>
+</div>
+</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>
+
+
+
+          </article>
+
+          
+          <div class="fluidity-decorative-gradient-line"></div>
+        </div>
+      </div>
+    </div>
+  </div></main>
+  </div></body>
+</html>
