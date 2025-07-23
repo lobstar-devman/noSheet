@@ -138,4 +138,4 @@ the_invoice.calculate();
 
 [Look at some examples](https://lobstar-devman.github.io/noSheetWebsite/examples/)
 
-[Goto the documentation](https://lobstar-devman.github.io/noSheetWebsite/)
+[Goto the documentation](https://lobstar-devman.github.io/noSheetWebsite/pages/)
