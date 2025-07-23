@@ -136,8 +136,6 @@ the_invoice.calculate();
 
 # Holy Sheet! That's good!
 
-[Look at some examples](/examples)
+[Look at some examples](https://lobstar-devman.github.io/noSheetWebsite/examples/)
 
-[Go deeper into what the differences between noSheet and a spreadsheet library are](/pages/what-the-diff)
-
-[A brief discussion of some advanced features](/pages/advanced-features)
+[Goto the documentation](https://lobstar-devman.github.io/noSheetWebsite/)
