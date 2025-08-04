@@ -1,38 +1,36 @@
-<!DOCTYPE html><!-- noSheetLibrary ---><html lang="en" dir="ltr">
-<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<!DOCTYPE html>
+<!-- noSheetLibrary --->
+<html lang="en" dir="ltr" data-theme="light">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width">
 <meta name="color-scheme" content="dark light">
-
-<title>Example 2 - Multiple Facets &amp; References | NoSheet</title><!-- Stylesheets ---><link rel="stylesheet" href="css/style.css" />
-<link rel="stylesheet" href="css/site.css" />
-<!-- JS Content --><script src="js/examples/utils.js"></script><script src="js/examples/simple_alpine_table.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@formulajs/formulajs/lib/browser/formula.min.js" crossorigin="anonymous"></script></head>
-<body class="min-h-screen"><div id="fluidity-theme-container">
-    <main class="flex-1 relative z-[1]"><div class="container mt-1 mx-auto px-2 py-2 md:px-2 md:py-4 lg:px-4 lg:py-8 min-h-screen">
+<title>Example 2 - Multiple Facets &amp; References | NoSheet</title>
+<!-- Stylesheets --->
+ <link rel="stylesheet" href="css/highlight.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<!-- JS Content -->
+<script src="js/examples/utils.js"></script>
+<script src="js/examples/simple_alpine_table.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@formulajs/formulajs/lib/browser/formula.min.js" crossorigin="anonymous"></script>
+</head>
+<body><div>
+    <main><div>
     
-    <header class="md:mb-4 lg:mb-8">
-      <h1 class="fluidity-page-title text-4xl group mb-2 md:mb-4 lg:mb-8">
-        <span class="relative inline-block">
+    <header>
+      <h1>
+        <span>
           Example 2 - Multiple Facets &amp; References
-          <span class="fluidity-page-title-line"></span>
         </span>
       </h1>
     </header>
 
     
-    <div class="gap-4 lg:gap-8">
+    <div>
       
-      <div id="main-content" class="col-span-1 lg:col-span-2 order-2 lg:order-1">
-        <div
-          class="relative overflow-hidden
-                bg-gradient-to-br from-white/95 to-neutral-50/90
-                dark:from-neutral-900/95 dark:to-neutral-800/90
-                rounded-xl px-4 md:px-8 py-3 md:py-6
-                border border-neutral-200/80 dark:border-neutral-700/80
-                backdrop-blur-md
-                shadow-lg shadow-sky-100/20 dark:shadow-sky-900/20
-                transition-all duration-300 ease-out">
-          <article class="prose prose-neutral dark:prose-invert">
+      <div>
+        <div>
+          <article>
             
 
     
@@ -123,28 +121,28 @@ document.addEventListener('alpine:init', () => {
 });       
 </script>
 
-<div class="min-h-screen">
-<div class="container mx-auto w-full h-full">
-    <div class="max-w-screen-lg mx-auto w-full h-full flex flex-col items-center justify-center">
+<div>
+<div>
+    <div>
 
     <h2>Extending the Simple Quote Calculator with additional facets</h2>
 
-    <div class="grid grid-cols-2 gap-4 justify-items-left w-full">
-        <div class="flex px-4 py-2">
+    <div>
+        <div>
             <div>
-                <p class="justify-normal">Change the manufacturing cost for all line items by adjusting the <code>manufacturing_cost_per_m2</code> parameter in the <a href="#raw_materials">raw_materials</a> facet</p>
+                <p>Change the manufacturing cost for all line items by adjusting the <code>manufacturing_cost_per_m2</code> parameter in the <a href="#raw_materials">raw_materials</a> facet</p>
             </div>
         </div>
 
-        <div class="flex px-4 py-2">
+        <div>
             <div>
                 <p>Set a minimum Margin Threshold for the quote through the <code>low_margin_threshold</code> parameter in the <a href="#gross_margin">gross_margin</a> facet</p>                    
             </div>
         </div>
     </div>     
 
-    <div class="grid grid-cols-2 gap-4 justify-items-left w-full">
-        <div class="flex px-4">
+    <div>
+        <div>
             <div>
                 <label for="Manufacturing_Cost">Manufacturing Cost:</label>
                 <input id="Manufacturing_Cost" x-data="referenceHandler('manufacturing_cost_per_m2')" x-model="value" type="number" min="0" max="100" step="0.1" x-bind="input" class="text-right w-12 border-gray-200 border-2">            
