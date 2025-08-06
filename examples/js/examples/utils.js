@@ -48,7 +48,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
 
     [...document.getElementsByTagName("script")].forEach(element => {
         
-        element.innerHTML.split('-prism').slice(1,-1).forEach( e => {
+        element.innerHTML.split('//-prism').slice(1,-1).forEach( e => {
 
             let element = document.getElementById(`prism-${++count}`);
              
