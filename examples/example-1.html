@@ -10,7 +10,15 @@
     <title>Example 1 - A Simple Quote Calculator | NoSheet</title>
     <!-- Stylesheets --->
 	<link href="css/prism.css" rel="stylesheet" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css">
+    <style>
+    :root {
+        --pico-font-size: 100%;
+    }
+    input[type="number"] {
+        margin-bottom: 0;
+    }
+    </style>    
     <!-- JS Content -->
     <script src="js/examples/utils.js"></script>
     <script src="js/examples/simple_alpine_table.js"></script>
@@ -20,10 +28,117 @@
 
 <body>
     <header>
-        <h1>
-            Example 1 - A Simple Quote Calculator
-        </h1>
+        <hgroup>
+            <h1>
+                Example 1 - A Simple Quote Calculator
+            </h1>
+        </hgroup>            
     </header>
+    <main>
+        <div>
+            <p>This table is calculated using the <a href="#lineitems">lineitems</a> facet
+            </p>
+            <p>The <a href="#lineitems">lineitems</a> facet contains formulas that calculate
+                the <code>Line Cost</code> and <code>Line Offer</code> cells for each row as
+                well as the aggregate values <code>total_cost</code>,
+                <code>total_offer</code> and <code>profit</code> that are displayed at the
+                bottom of the table</p>
+        </div>
+
+        <div x-data="simpleNoSheetTable('lineitemsTable')">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Item Cost</th>
+                        <th>Unit Price</th>
+                        <th>Quantity</th>
+                        <th>Line Cost</th>
+                        <th>Line Offer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="(item, index) in items" :key="index">
+                        <tr :id="`${storeId}-row[${index}]`">
+                            <template x-for="(column, column_index) in Array(6)">
+                                <td>
+
+                                    <template x-if="column_index > 0 && column_index <= 3">
+                                        <input type="number" min="0"
+                                            :value="item[column_index]"
+                                            @input="setCellValue(index, column_index, +$el.value)">
+                                    </template>
+
+                                    <template x-if="!column_index">
+                                        <!--Don't update on calculation-->
+                                        <span x-text="item[column_index]"></span>
+                                    </template>
+
+                                    <template x-if="column_index >= 4">
+                                        <!--Update on calculation-->
+                                        <!-- calculation may occur during load/unload in which case items[index] may be 'undefined' -->
+                                        <div x-text="item[column_index]"
+                                            x-init="$watch('calculationTick', _ => $el.innerHTML = items[index]?.[column_index])">
+                                        </div>
+                                    </template>
+
+                                </td>
+                            </template>
+                        </tr>
+                    </template>
+                    <tr x-show="isEmpty">
+                        <td colspan="5">No matching records found.</td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th>
+                            <div x-data="aggregate('total_cost')" x-text="value"></div>
+                        </th>
+                        <th>
+                            <div x-data="aggregate('total_offer')" x-text="value"></div>
+                        </th>
+                    </tr>
+                    <tr>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th>Profit:</th>
+                        <th>
+                            <div x-data="aggregate('profit')" x-text="value"></div>
+                        </th>
+                    </tr>
+
+                </tfoot>
+            </table>
+
+            <div>
+                <button
+                    @click="storedTable.load(getRandomData(), 'random_data');reset();">Load
+                    Random Data</button>
+                <button @click="storedTable.unload('random_data');reset();">Unload All
+                    Random Data</button>
+            </div>
+
+        </div> <!-- simpleTable()-->
+
+        <div>
+            <hr>
+            <h3>Create and populate the noSheet table:</h3>
+            <pre>
+                <code id="prism-1" class="language-javascript"></code>
+            </pre>                                        
+            <h3 id="lineitems">The line items facet:</h3>
+            <pre>
+                <code src="/js/examples/facets/lineitems.mjs" class="prism-fetch language-javascript"></code>
+            </pre>                                        
+        </div>
+    </main>        
     <script>
         const SUM = formulajs.SUM;
 
@@ -78,110 +193,6 @@
             });
         });       
     </script>
-
-    <div>
-        <p>This table is calculated using the <a href="#lineitems">lineitems</a> facet
-        </p>
-        <p>The <a href="#lineitems">lineitems</a> facet contains formulas that calculate
-            the <code>Line Cost</code> and <code>Line Offer</code> cells for each row as
-            well as the aggregate values <code>total_cost</code>,
-            <code>total_offer</code> and <code>profit</code> that are displayed at the
-            bottom of the table</p>
-    </div>
-
-    <div x-data="simpleNoSheetTable('lineitemsTable')">
-        <table>
-            <thead>
-                <tr>
-                    <th>Item</th>
-                    <th>Item Cost</th>
-                    <th>Unit Price</th>
-                    <th>Quantity</th>
-                    <th>Line Cost</th>
-                    <th>Line Offer</th>
-                </tr>
-            </thead>
-            <tbody>
-                <template x-for="(item, index) in items" :key="index">
-                    <tr :id="`${storeId}-row[${index}]`">
-                        <template x-for="(column, column_index) in Array(6)">
-                            <td>
-
-                                <template x-if="column_index > 0 && column_index <= 3">
-                                    <input type="number" min="0"
-                                        :value="item[column_index]"
-                                        @input="setCellValue(index, column_index, +$el.value)">
-                                </template>
-
-                                <template x-if="!column_index">
-                                    <!--Don't update on calculation-->
-                                    <span x-text="item[column_index]"></span>
-                                </template>
-
-                                <template x-if="column_index >= 4">
-                                    <!--Update on calculation-->
-                                    <!-- calculation may occur during load/unload in which case items[index] may be 'undefined' -->
-                                    <div x-text="item[column_index]"
-                                        x-init="$watch('calculationTick', _ => $el.innerHTML = items[index]?.[column_index])">
-                                    </div>
-                                </template>
-
-                            </td>
-                        </template>
-                    </tr>
-                </template>
-                <tr x-show="isEmpty">
-                    <td colspan="5">No matching records found.</td>
-                </tr>
-            </tbody>
-            <tfoot>
-                <tr>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    <th>
-                        <div x-data="aggregate('total_cost')" x-text="value"></div>
-                    </th>
-                    <th>
-                        <div x-data="aggregate('total_offer')" x-text="value"></div>
-                    </th>
-                </tr>
-                <tr>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    <th>Profit:</th>
-                    <th>
-                        <div x-data="aggregate('profit')" x-text="value"></div>
-                    </th>
-                </tr>
-
-            </tfoot>
-        </table>
-
-        <div>
-            <button
-                @click="storedTable.load(getRandomData(), 'random_data');reset();">Load
-                Random Data</button>
-            <button @click="storedTable.unload('random_data');reset();">Unload All
-                Random Data</button>
-        </div>
-
-    </div> <!-- simpleTable()-->
-
-    <div>
-        <hr>
-        <h3>Create and populate the noSheet table:</h3>
-        <pre>
-            <code id="prism-1" class="language-javascript"></code>
-        </pre>                                        
-        <h3 id="lineitems">The lineitems facet:</h3>
-        <pre>
-            <code src="/js/examples/facets/lineitems.mjs" class="prism-fetch language-javascript"></code>
-        </pre>                                        
-    </div>
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>
 </body>
 </html>
