@@ -28,3 +28,48 @@ async function loadJSON(url){
 
     return response.ok ? await response.json() : [];
 }
+
+//populate prism 
+document.addEventListener("DOMContentLoaded", (event) => { 
+
+    Prism.plugins.NormalizeWhitespace.setDefaults({
+        "remove-trailing": true,
+        "remove-indent": true,
+        "left-trim": true,
+        "right-trim": true,
+        "remove-initial-line-feed": true,        
+        /*"break-lines": 80,
+        "indent": 2,
+        "tabs-to-spaces": 4,
+        "spaces-to-tabs": 4*/
+    });
+
+    let count = 0;
+
+    [...document.getElementsByTagName("script")].forEach(element => {
+        
+        element.innerHTML.split('//-prism').slice(1,-1).forEach( e => {
+
+            let element = document.getElementById(`prism-${++count}`);
+             
+            if( element ){
+                element.innerHTML = e;
+                window.Prism.highlightElement(element);
+            }
+        });
+    });
+
+    [...document.getElementsByClassName("prism-fetch")].forEach(element => {
+
+        fetch(
+            element.getAttribute('src'), 
+            {
+                headers: [["Content-Type", "text/html"]]
+        })
+        .then((response) => response.text())
+        .then((text) => {
+            element.innerHTML = text;
+            window.Prism.highlightElement(element);
+        })
+    });
+})

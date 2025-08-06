@@ -1,163 +1,116 @@
-<!DOCTYPE html><!-- noSheetLibrary ---><html lang="en" dir="ltr">
-<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
-<meta name="viewport" content="width=device-width">
-<meta name="color-scheme" content="dark light">
+<!DOCTYPE html>
+<!-- noSheetLibrary --->
+<html lang="en" dir="ltr" data-theme="light">
 
-<title>Example 1 - A Simple Quote Calculator | NoSheet</title><!-- Stylesheets ---><link rel="stylesheet" href="css/style.css" />
-<link rel="stylesheet" href="css/site.css" />
-<!-- JS Content --><script src="js/examples/utils.js"></script><script src="js/examples/simple_alpine_table.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@formulajs/formulajs/lib/browser/formula.min.js" crossorigin="anonymous"></script></head>
-<body class="min-h-screen"><div id="fluidity-theme-container">
-    <main class="flex-1 relative z-[1]"><div class="container mt-1 mx-auto px-2 py-2 md:px-2 md:py-4 lg:px-4 lg:py-8 min-h-screen">
-    
-    <header class="md:mb-4 lg:mb-8">
-      <h1 class="fluidity-page-title text-4xl group mb-2 md:mb-4 lg:mb-8">
-        <span class="relative inline-block">
-          Example 1 - A Simple Quote Calculator
-          <span class="fluidity-page-title-line"></span>
-        </span>
-      </h1>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <meta name="color-scheme" content="dark light">
+
+    <title>Example 1 - A Simple Quote Calculator | NoSheet</title>
+    <!-- Stylesheets --->
+	<link href="css/prism.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css">
+    <style>
+    :root {
+        --pico-font-size: 100%;
+    }
+    input[type="number"] {
+        margin-bottom: 0;
+    }
+    </style>    
+    <!-- JS Content -->
+    <script src="js/examples/utils.js"></script>
+    <script src="js/examples/simple_alpine_table.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@formulajs/formulajs/lib/browser/formula.min.js" crossorigin="anonymous"></script>
+    <script src="js/prism.js" data-manual></script>
+</head>
+
+<body>
+    <header>
+        <hgroup>
+            <h1>
+                Example 1 - A Simple Quote Calculator
+            </h1>
+        </hgroup>            
     </header>
-
-    
-    <div class="gap-4 lg:gap-8">
-      
-      <div id="main-content" class="col-span-1 lg:col-span-2 order-2 lg:order-1">
-        <div
-          class="relative overflow-hidden
-                bg-gradient-to-br from-white/95 to-neutral-50/90
-                dark:from-neutral-900/95 dark:to-neutral-800/90
-                rounded-xl px-4 md:px-8 py-3 md:py-6
-                border border-neutral-200/80 dark:border-neutral-700/80
-                backdrop-blur-md
-                shadow-lg shadow-sky-100/20 dark:shadow-sky-900/20
-                transition-all duration-300 ease-out">
-          <article class="prose prose-neutral dark:prose-invert">
-            
-
-    <script>
-const SUM = formulajs.SUM;
-
-//
-// Load the noSheet library, facets and create and populate a table
-//    
-var whenNoSheetReady = new Promise( (resolve) => {
-
-    (async () => {
-
-        //the library
-        const {defineStack, createTable} = await import('/js/nosheet.min.mjs');
-
-        //the facets
-        const {default: lineitems} = await import('/js/examples/facets/lineitems.mjs');
-
-        //the data
-        const response = await fetch('/js/examples/data/example_1.json');
-        const data = response.ok ? await response.json() : [];
-
-        //
-        //create and define the table
-        //        
-        let new_table = createTable(['item', 'unit_cost', 'unit_offer', 'quantity'], lineitems);
-
-        //
-        //populate the table
-        //
-        new_table.load(data);
-        new_table.calculate();
-
-        resolve( new_table );
-    })()        
-});
-
-//
-//Plumb in Alpine
-//
-document.addEventListener('alpine:init', () => {
-
-    console.log('alpine:init');
-    Alpine.store('lineitemsTable', {});
-
-    whenNoSheetReady.then( (theTable) => {
-
-        console.log('whenNoSheetReady');
-
-        //update the store with the loaded nosheet table
-        Alpine.store('lineitemsTable', theTable);
-    });
-});       
-</script>
-
-<div class="min-h-screen">
-<div class="container mx-auto w-full h-full">
-    <div class="max-w-screen-lg mx-auto w-full h-full flex flex-col items-center justify-center">
-
-        <div class="items-left">
-            <p>This table is calculated using the <a href="#lineitems">lineitems</a> facet</p>
-            <p>The <a href="#lineitems">lineitems</a> facet contains formulas that calculate the <code>Line Cost</code> and <code>Line Offer</code> cells for each row as well as the aggregate values <code>total_cost</code>, <code>total_offer</code> and <code>profit</code> that are displayed at the bottom of the table</p>
+    <main>
+        <div>
+            <p>This table is calculated using the <a href="#lineitems">lineitems</a> facet
+            </p>
+            <p>The <a href="#lineitems">lineitems</a> facet contains formulas that calculate
+                the <code>Line Cost</code> and <code>Line Offer</code> cells for each row as
+                well as the aggregate values <code>total_cost</code>,
+                <code>total_offer</code> and <code>profit</code> that are displayed at the
+                bottom of the table</p>
         </div>
 
-        <div x-data="simpleNoSheetTable('lineitemsTable')" class="p-5 w-full flex flex-col">
-            <table class="table-fixed" width="100%" :class="storeId">
-                <thead class="border-b-2 text-gray-800">
-                    <tr class="text-center">
-                        <th class="w-2/6 px-4 py-2 text-left">Item</th>
-                        <th class="px-4 py-2">Item Cost</th>
-                        <th class="px-4 py-2">Unit Price</th>
-                        <th class="px-4 py-2">Quantity</th>
-                        <th class="px-4 py-2">Line Cost</th>
-                        <th class="px-4 py-2">Line Offer</th>
-                    </tr>    
+        <div x-data="simpleNoSheetTable('lineitemsTable')">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Item Cost</th>
+                        <th>Unit Price</th>
+                        <th>Quantity</th>
+                        <th>Line Cost</th>
+                        <th>Line Offer</th>
+                    </tr>
                 </thead>
                 <tbody>
                     <template x-for="(item, index) in items" :key="index">
-                        <tr :id="`${storeId}-row[${index}]`" class="hover:bg-gray-200 dark:hover:bg-gray-900 text-xs">
+                        <tr :id="`${storeId}-row[${index}]`">
                             <template x-for="(column, column_index) in Array(6)">
-                                <td class="py-3" :id="`${storeId}_cell[${index}][${column_index}]`">
+                                <td>
 
                                     <template x-if="column_index > 0 && column_index <= 3">
-                                        <input type="number" min="0" :value="item[column_index]" @input="setCellValue(index, column_index, +$el.value)" class="text-right w-5/6 ml-2 border-gray-200 border-2">
+                                        <input type="number" min="0"
+                                            :value="item[column_index]"
+                                            @input="setCellValue(index, column_index, +$el.value)">
                                     </template>
-                                    
+
                                     <template x-if="!column_index">
                                         <!--Don't update on calculation-->
-                                        <span x-text="item[column_index]"></span>                                            
-                                    </template>                                        
+                                        <span x-text="item[column_index]"></span>
+                                    </template>
 
                                     <template x-if="column_index >= 4">
-                                        <!--Update on calculation--> <!-- calculation may occur during load/unload in which case items[index] may be 'undefined' -->
-                                        <div x-text="item[column_index]" x-init="$watch('calculationTick', _ => $el.innerHTML = items[index]?.[column_index])" class="text-right"></div>                                            
-                                    </template>                                        
+                                        <!--Update on calculation-->
+                                        <!-- calculation may occur during load/unload in which case items[index] may be 'undefined' -->
+                                        <div x-text="item[column_index]"
+                                            x-init="$watch('calculationTick', _ => $el.innerHTML = items[index]?.[column_index])">
+                                        </div>
+                                    </template>
 
                                 </td>
                             </template>
                         </tr>
                     </template>
                     <tr x-show="isEmpty">
-                        <td colspan="5" class="text-center py-3 text-gray-900 text-sm">No matching records found.</td>
+                        <td colspan="5">No matching records found.</td>
                     </tr>
                 </tbody>
-                <tfoot class="border-t-4 text-gray-800">    
+                <tfoot>
                     <tr>
                         <th></th>
                         <th></th>
                         <th></th>
                         <th></th>
                         <th>
-                            <div x-data="aggregate('total_cost')" x-text="value" class="text-right"></div>
+                            <div x-data="aggregate('total_cost')" x-text="value"></div>
                         </th>
                         <th>
-                            <div x-data="aggregate('total_offer')" x-text="value" class="text-right"></div>
+                            <div x-data="aggregate('total_offer')" x-text="value"></div>
                         </th>
                     </tr>
-                    <tr class="border-t-4 text-gray-800">
+                    <tr>
                         <th></th>
                         <th></th>
                         <th></th>
                         <th></th>
                         <th>Profit:</th>
                         <th>
-                            <div x-data="aggregate('profit')" x-text="value" class="text-right"></div>
+                            <div x-data="aggregate('profit')" x-text="value"></div>
                         </th>
                     </tr>
 
@@ -165,61 +118,81 @@ document.addEventListener('alpine:init', () => {
             </table>
 
             <div>
-                <button @click="storedTable.load(getRandomData(), 'random_data');reset();" class="bg-transparent hover:bg-gray-600 font-semibold hover:text-white py-2 px-4 border-gray-300 hover:border-transparent border-2 rounded">Load Random Data</button>            
-                <button @click="storedTable.unload('random_data');reset();" class="bg-transparent hover:bg-gray-600 font-semibold hover:text-white py-2 px-4 border-gray-300 hover:border-transparent border-2 rounded">Unload All Random Data</button>
+                <button
+                    @click="storedTable.load(getRandomData(), 'random_data');reset();">Load
+                    Random Data</button>
+                <button @click="storedTable.unload('random_data');reset();">Unload All
+                    Random Data</button>
             </div>
 
         </div> <!-- simpleTable()-->
 
-        <div class="container mx-auto w-full h-full">
-<h3 id="init">Create and populate the noSheet table:</h3>            
-<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl"><span class="c1">//
-</span></span></span><span class="line"><span class="ln"> 2</span><span class="cl"><span class="c1">//create and define the table
-</span></span></span><span class="line"><span class="ln"> 3</span><span class="cl"><span class="c1">//        
-</span></span></span><span class="line"><span class="ln"> 4</span><span class="cl"><span class="c1"></span><span class="kd">let</span> <span class="nx">new_table</span> <span class="o">=</span> <span class="nx">createTable</span><span class="p">([</span><span class="s1">&#39;item&#39;</span><span class="p">,</span> <span class="s1">&#39;unit_cost&#39;</span><span class="p">,</span> <span class="s1">&#39;unit_offer&#39;</span><span class="p">,</span> <span class="s1">&#39;quantity&#39;</span><span class="p">],</span> <span class="nx">lineitems</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln"> 5</span><span class="cl">
-</span></span><span class="line"><span class="ln"> 6</span><span class="cl"><span class="c1">//
-</span></span></span><span class="line"><span class="ln"> 7</span><span class="cl"><span class="c1">//populate the table
-</span></span></span><span class="line"><span class="ln"> 8</span><span class="cl"><span class="c1">//
-</span></span></span><span class="line"><span class="ln"> 9</span><span class="cl"><span class="c1"></span><span class="nx">new_table</span><span class="p">.</span><span class="nx">load</span><span class="p">(</span><span class="nx">data</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">10</span><span class="cl"><span class="nx">new_table</span><span class="p">.</span><span class="nx">calculate</span><span class="p">();</span></span></span></code></pre></div>          
-<h3 id="lineitems">The lineitems facet:</h3>
-
-
-
-<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl"><span class="s2">&#34;use strict&#34;</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln"> 2</span><span class="cl"><span class="cm">/**
-</span></span></span><span class="line"><span class="ln"> 3</span><span class="cl"><span class="cm">A simple invoice/quotation calculator
-</span></span></span><span class="line"><span class="ln"> 4</span><span class="cl"><span class="cm">*/</span>
-</span></span><span class="line"><span class="ln"> 5</span><span class="cl"><span class="kr">export</span> <span class="k">default</span> <span class="kd">function</span><span class="p">(</span><span class="nx">table</span><span class="p">,</span> <span class="nx">row</span><span class="p">)</span> <span class="p">{</span>
-</span></span><span class="line"><span class="ln"> 6</span><span class="cl">
-</span></span><span class="line"><span class="ln"> 7</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">line_cost</span>     <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">row</span><span class="p">.</span><span class="nx">quantity</span> <span class="o">*</span> <span class="nx">row</span><span class="p">.</span><span class="nx">unit_cost</span><span class="p">;</span>    
-</span></span><span class="line"><span class="ln"> 8</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">line_offer</span>    <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">row</span><span class="p">.</span><span class="nx">quantity</span> <span class="o">*</span> <span class="nx">row</span><span class="p">.</span><span class="nx">unit_offer</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln"> 9</span><span class="cl">
-</span></span><span class="line"><span class="ln">10</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">total_quantity</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;quantity&#39;</span><span class="p">));</span>
-</span></span><span class="line"><span class="ln">11</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">total_cost</span>     <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;line_cost&#39;</span><span class="p">));</span>
-</span></span><span class="line"><span class="ln">12</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">total_offer</span>    <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;line_offer&#39;</span><span class="p">));</span>
-</span></span><span class="line"><span class="ln">13</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">profit</span>         <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">table</span><span class="p">.</span><span class="nx">total_offer</span> <span class="o">-</span> <span class="nx">table</span><span class="p">.</span><span class="nx">total_cost</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln">14</span><span class="cl"><span class="p">};</span></span></span></code></pre></div>
-            
+        <div>
+            <hr>
+            <h3>Create and populate the noSheet table:</h3>
+            <pre>
+                <code id="prism-1" class="language-javascript"></code>
+            </pre>                                        
+            <h3 id="lineitems">The line items facet:</h3>
+            <pre>
+                <code src="/js/examples/facets/lineitems.mjs" class="prism-fetch language-javascript"></code>
+            </pre>                                        
         </div>
+    </main>        
+    <script>
+        const SUM = formulajs.SUM;
 
-    </div>
-</div>
-</div>
+        //
+        // Load the noSheet library, facets and create and populate a table
+        //    
+        var whenNoSheetReady = new Promise((resolve) => {
 
+            (async () => {
 
-  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>
+                //the library
+                const { defineStack, createTable } = await import('/js/nosheet.min.mjs');
 
+                //the facets
+                const { default: lineitems } = await import('/js/examples/facets/lineitems.mjs');
 
+                //the data
+                const response = await fetch('/js/examples/data/example_1.json');
+                const data = response.ok ? await response.json() : [];
 
-          </article>
+                //-prism
+                //
+                //create and define the table
+                //        
+                let new_table = createTable(['item', 'unit_cost', 'unit_offer', 'quantity'], lineitems);
 
-          
-          <div class="fluidity-decorative-gradient-line"></div>
-        </div>
-      </div>
-    </div>
-  </div></main>
-  </div></body>
+                //
+                //populate the table
+                //
+                new_table.load(data);
+                new_table.calculate();
+                //-prism
+
+                resolve(new_table);
+            })()
+        });
+
+        //
+        //Plumb in Alpine
+        //
+        document.addEventListener('alpine:init', () => {
+
+            console.log('alpine:init');
+            Alpine.store('lineitemsTable', {});
+
+            whenNoSheetReady.then((theTable) => {
+
+                console.log('whenNoSheetReady');
+
+                //update the store with the loaded nosheet table
+                Alpine.store('lineitemsTable', theTable);
+            });
+        });       
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>
+</body>
 </html>
