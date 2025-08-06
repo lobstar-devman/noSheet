@@ -1,307 +1,218 @@
-<!DOCTYPE html><!-- noSheetLibrary ---><html lang="en" dir="ltr">
-<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
-<meta name="viewport" content="width=device-width">
-<meta name="color-scheme" content="dark light">
+<!DOCTYPE html>
+<!-- noSheetLibrary --->
+<html lang="en" dir="ltr" data-theme="light">
 
-<title>Example 3 - Stacks, Consolidation &amp; References | NoSheet</title><!-- Stylesheets ---><link rel="stylesheet" href="css/style.css" />
-<link rel="stylesheet" href="css/site.css" />
-<!-- JS Content --><script src="js/examples/utils.js"></script><script src="js/examples/simple_alpine_table.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@formulajs/formulajs/lib/browser/formula.min.js" crossorigin="anonymous"></script></head>
-<body class="min-h-screen"><div id="fluidity-theme-container">
-    <main class="flex-1 relative z-[1]"><div class="container mt-1 mx-auto px-2 py-2 md:px-2 md:py-4 lg:px-4 lg:py-8 min-h-screen">
-    
-    <header class="md:mb-4 lg:mb-8">
-      <h1 class="fluidity-page-title text-4xl group mb-2 md:mb-4 lg:mb-8">
-        <span class="relative inline-block">
-          Example 3 - Stacks, Consolidation &amp; References
-          <span class="fluidity-page-title-line"></span>
-        </span>
-      </h1>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <meta name="color-scheme" content="dark light">
+
+    <title>Example 3 - Stacks, Consolidation &amp; References | NoSheet</title>
+    <!-- Stylesheets --->
+    <link href="css/prism.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.colors.min.css">
+    <style>
+        :root {
+            --pico-font-size: 100%;
+        }
+
+        input[type="number"] {
+            margin-bottom: 0;
+        }
+
+        .parent {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+            grid-column-gap: var(--pico-spacing);
+            grid-row-gap: 0px;
+        }
+
+        .div1 {
+            grid-area: 1 / 1 / 2 / 2;
+        }
+
+        .div2 {
+            grid-area: 1 / 2 / 2 / 3;
+        }
+
+        .div3 {
+            grid-area: 2 / 1 / 3 / 2;
+        }
+
+        .div4 {
+            grid-area: 2 / 2 / 3 / 3;
+        }
+    </style>
+    <!-- JS Content -->
+    <script src="js/examples/utils.js"></script>
+    <script src="js/examples/simple_alpine_table.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@formulajs/formulajs/lib/browser/formula.min.js"
+        crossorigin="anonymous"></script>
+    <script src="js/prism.js" data-manual></script>
+</head>
+
+<body>
+    <header>
+        <hgroup>
+            <h1>Example 3 - Stacks, Consolidation &amp; References</h1>
+        </hgroup>
+        <hgroup>
+            <h3>Extending the Quote Calculator to handle multiple sites and multiple suppliers</h3>
+        </hgroup>
     </header>
+    <main>
+        <article>
+            <form>
+                <fieldset>
+                    <div class="parent">
+                        <div class="div1">
+                            <p>Change the manufacturing cost for all line items by adjusting the
+                                <code>manufacturing_cost_per_m2</code>
+                                parameter in the <a href="#raw_materials">raw_materials</a> facet
+                            </p>
+                        </div>
+                        <div class="div2">
+                            <p>Set a minimum Margin Threshold for the quote through the
+                                <code>low_margin_threshold</code> parameter in
+                                the <a href="#gross_margin">gross_margin</a> facet
+                            </p>
+                        </div>
+                        <div class="div3">
+                            <label for="Manufacturing_Cost">Manufacturing Cost:
+                                <input id="Manufacturing_Cost" x-data="referenceHandler('manufacturing_cost_per_m2')"
+                                    x-model="value" type="number" min="0" max="100" step="0.1" x-bind="input">
+                                <label for="Manufacturing_Cost">per m<sup>2</sup></label>
+                            </label>
+                        </div>
+                        <div class="div4">
+                            <label for="Margin_Threshold">Margin Threshold:
+                                <input id="Margin_Threshold" x-data="referenceHandler('low_margin_threshold')"
+                                    x-model="value" type="number" min="0" max="100" x-bind="input">
+                            </label>
+                        </div>
+                    </div>
+                </fieldset>
+            </form>
+        </article>
 
-    
-    <div class="gap-4 lg:gap-8">
-      
-      <div id="main-content" class="col-span-1 lg:col-span-2 order-2 lg:order-1">
-        <div
-          class="relative overflow-hidden
-                bg-gradient-to-br from-white/95 to-neutral-50/90
-                dark:from-neutral-900/95 dark:to-neutral-800/90
-                rounded-xl px-4 md:px-8 py-3 md:py-6
-                border border-neutral-200/80 dark:border-neutral-700/80
-                backdrop-blur-md
-                shadow-lg shadow-sky-100/20 dark:shadow-sky-900/20
-                transition-all duration-300 ease-out">
-          <article class="prose prose-neutral dark:prose-invert">
-            
+        <article>
+            <div x-data="{tab: 0}"
+                x-effect="ifAvailable($store.siteStack, _ => Alpine.store('activeTable', $store.siteStack.getUniqueTable(`site${tab+1}`)))">
 
-    
-<script>
-const SUM     = formulajs.SUM,
-      AVERAGE = formulajs.AVERAGE;
+                <hgroup>
+                    <h3>Site Quotation</h3>
+                </hgroup>
+                <p>The site quotation table shows the calculations for the selected site.<br>The <a
+                        href="#consolidation">consolidated</a> figures for all of the sites are
+                    shown at the top right of the table.</p>
 
-var percent_format  = new Intl.NumberFormat(undefined, {style: "percent"});
-
-//
-// Load the noSheet library, facets and create and populate a table
-//    
-var whenNoSheetReady = new Promise( (resolve) => {
-
-    (async () => {
-
-        //the library
-        const {defineStack, createTable} = await import('/js/nosheet.min.mjs');
-
-        //the facets
-        const {default: raw_materials}   = await import('/js/examples/facets/raw_materials.mjs');
-        const {default: lineitems}       = await import('/js/examples/facets/lineitems.mjs');
-        const {default: gross_margin}    = await import('/js/examples/facets/gross_margin.mjs');        
-        const {default: steel_suppliers} = await import('/js/examples/facets/steel_suppliers.mjs');        
-        const {default: consolidation}   = await import('/js/examples/facets/consolidation.mjs');    
-
-        //load the data
-        const data1 = await loadJSON('/js/examples/data/example_1.json'),
-              data2 = await loadJSON('/js/examples/data/example_3_site_2.json'),
-              data3 = await loadJSON('/js/examples/data/example_3_site_3.json'),
-              data4 = await loadJSON('/js/examples/data/example_3_steel_suppliers.json'); 
-        
-        //
-        //create and define the stack, which acts as a table factory and allows us to use consolidation facets
-        //        
-        let stack = defineStack('item', 'steel_m2', 'unit_offer', 'quantity'),
-            site_1 = stack.createTable('site1'),
-            site_2 = stack.createTable('site2'),
-            site_3 = stack.createTable('site3');
-
-        //set the facets used by the stack
-        stack.addFacets(raw_materials, lineitems, gross_margin);
-
-        //set a consolidation facet
-        stack.consolidate(consolidation);            
-
-        //
-        //populate the tables
-        //
-        site_1.load(data1);
-        site_2.load(data2);
-        site_3.load(data3);
-
-        //Create a table for the steel suppliers
-        let suppliers = createTable(['supplier', 'steel_m2', 'transport_m2'], steel_suppliers);
-
-        //load and calculate
-        suppliers.load(data4);
-        suppliers.calculate();
-
-        //Set the average_steel_cost_m2 reference required by the raw_materials facets to use
-        //the average_cost_per_m2 aggregate from the suppliers table
-        stack.setDefaultReferences( function(uses) {
-
-            this.average_steel_cost_m2 = uses(suppliers).average_cost_per_m2;
-        });  
-
-        resolve( [stack, site_1, site_2, site_3, suppliers] );
-    })()        
-});
-
-function referenceHandler(referenceName){
-    return {
-
-        init() {
-
-            //watch the store for reference initialization
-            this.$watch(`$store.${referenceName}`,(newHandler, oldHandler)=>{
-                this.value = newHandler.value;
-            })
-        },
-        value: '',
-        input: {
-            ['@input'](event) {
-                Alpine.store(referenceName).value = +event.srcElement.value;
-            },
-        },        
-    };                   
-};
-
-let unavailable = Symbol('unavailable');
-
-function ifAvailable(obj, fn){
-
-    let isAvailable = obj !== unavailable;
-
-    return fn && isAvailable ? fn(obj) : isAvailable;
-}
-
-//
-//Plumb in Alpine
-//
-document.addEventListener('alpine:init', () => {
-
-    console.log('alpine:init');
-
-    Alpine.data('consolidation', (name, formatter) => ({
-
-        init(){
-            //watch the store
-            this.$watch(`$store.consolidated`,(new_value, old_value)=>{           
-    
-                this.calculatedValue = Alpine.store('siteStack')[name].valueOf();
-            });                
-        },
-
-        calculatedValue: undefined,
-
-        get value() {
-
-            let v = this.calculatedValue ?? Alpine.store('siteStack')[name]?.valueOf();
-
-            return !formatter ? v : formatter.format(v);
-        },        
-    }));
-
-    Alpine.store('steelSuppliers', unavailable);
-    Alpine.store('activeTable', unavailable);
-    Alpine.store('siteStack', unavailable);
-    Alpine.store('consolidated', 0);
-
-    whenNoSheetReady.then( ([theStack, site1, site2, site3, suppliers]) => {
-
-        console.log('whenNoSheetReady');
-
-        //Define some reference handles
-        Alpine.store('low_margin_threshold', theStack.tables().getReferenceHandle('low_margin_threshold', 30) );
-        Alpine.store('manufacturing_cost_per_m2', theStack.tables().getReferenceHandle('manufacturing_cost_per_m2', 0.3) );
-
-        //set the consolidation refernces to mirror the table consolidation handle
-        theStack.setConsolidationReferences( function(uses) {
-
-            this.low_margin_threshold = Alpine.store('low_margin_threshold').value;
-        });
-
-        //increment the consolidation tick to force UI update
-        theStack.afterConsolidation( _ => {
-            Alpine.store('consolidated', Alpine.store('consolidated') + 1);
-         });
-
-        theStack.tables().calculate();    
-
-        //update the store with the init'd objects
-        Alpine.store('siteStack', theStack);
-        Alpine.store('activeTable', site1);
-        Alpine.store('steelSuppliers', suppliers);
-    });
-});       
-</script>
-
-<div class="min-h-screen">
-<div class="container mx-auto w-full h-full" x-data="{tab: 0}" x-effect="ifAvailable($store.siteStack, _ => Alpine.store('activeTable', $store.siteStack.getUniqueTable(`site${tab+1}`)))">
-    <div class="max-w-screen-lg mx-auto w-full h-full flex flex-col items-center justify-center">
-
-        <h2>Extending the Quote Calculator to handle multiple sites and multiple suppliers</h2>
-
-        <div class="grid grid-cols-2 gap-4 items-start justify-center w-full">
-            <div class="flex px-4">
                 <div>
-                    <p class="justify-normal">Change the manufacturing cost for all line items by adjusting the <code>manufacturing_cost_per_m2</code> parameter in the <a href="#raw_materials">raw_materials</a> facet</p>
-                </div>
-            </div>
-
-            <div class="flex px-4">
-                <div>
-                    <p>Set a minimum Margin Threshold for the quote through the <code>low_margin_threshold</code> parameter in the <a href="#gross_margin">gross_margin</a> facet</p>                    
-                </div>
-            </div>
-        </div>        
-
-        <div class="grid grid-cols-2 gap-4 justify-items-auto w-full">
-            <div class="flex px-4">
-                <div>
-                    <label for="Manufacturing_Cost">Manufacturing Cost:</label>
-                    <input id="Manufacturing_Cost" x-data="referenceHandler('manufacturing_cost_per_m2')" x-model="value" type="number" min="0" max="100" step="0.1" x-bind="input" class="text-right w-12 border-gray-200 border-2">            
-                    <label for="Manufacturing_Cost">per m<sup>2</sup></label>
-                </div>
-            </div>
-
-            <div class="flex px-4">
-                <div>
-                    <label for="Margin_Threshold">Margin Threshold:</label>
-                    <input id="Margin_Threshold" x-data="referenceHandler('low_margin_threshold')" x-model="value" type="number" min="0" max="100" x-bind="input" class="text-right w-12 border-gray-200 border-2">            
-                </div>
-            </div>
-        </div>        
-
-        <h3>Site Quotation</h3>
-        <p>The site quotation table shows the calculations for the selected site.<br>The <a href="#consolidation">consolidated</a> figures for all of the sites are shown at the top right of the table.</p>
-
-        <div class="max-w-screen-lg mx-auto w-full h-full flex flex-col items-center justify-center">
-            <div class="flex px-4 py-2">
-                <div>
-                    <button :class="!tab ? 'bg-blue-100' : 'bg-transparent'" :disabled="!tab" @click="tab = 0" class="hover:bg-blue-500 text-blue-700 font-semibold hover:text-white py-2 px-4 border border-blue-500 hover:border-transparent rounded mr-10">
-                    Site 1
+                    <button :class="!tab ? 'primary' : 'secondary'" :disabled="!tab" @click="tab = 0">
+                        Site 1
                     </button>
-                </div>                    
-                <div>
-                    <button :class="1==tab ? 'bg-blue-100' : 'bg-transparent'" :disabled="1==tab" @click="tab = 1" class="bg-transparent hover:bg-blue-500 text-blue-700 font-semibold hover:text-white py-2 px-4 border border-blue-500 hover:border-transparent rounded mr-10">
-                    Site 2
+                    <button :class="1==tab ?  'primary' : 'secondary'" :disabled="1==tab" @click="tab = 1">
+                        Site 2
                     </button>
-                </div>                    
-                <div>
-                    <button :class="2==tab ? 'bg-blue-100' : 'bg-transparent'" :disabled="2==tab" @click="tab = 2" class="bg-transparent hover:bg-blue-500 text-blue-700 font-semibold hover:text-white py-2 px-4 border border-blue-500 hover:border-transparent rounded mr-10">
-                    Site 3
+                    <button :class="2==tab ?  'primary' : 'secondary'" :disabled="2==tab" @click="tab = 2">
+                        Site 3
                     </button>
                 </div>
-            </div>
-        </div>
+                <hr>
+                <hgroup>
+                    <h5>For all sites:</h5>
+                </hgroup>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Total Cost</th>
+                            <th>Total Offer</th>
+                            <th>Profit</th>
+                            <th>Gross Margin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <th x-data="consolidation('total_cost')" x-text="Number(value).toFixed(2)"></th>
+                            <th x-data="consolidation('total_offer')" x-text="Number(value).toFixed(2)"></th>
+                            <th x-data="consolidation('profit')" x-text="Number(value).toFixed(2)"></th>
+                            <th>
+                                <div x-data="consolidation('low_margin_warning')"
+                                    :class="value ? 'pico-color-red-500' : 'pico-color-green-500'">
+                                    <div x-data="consolidation('gross_margin', percent_format)" x-text="value"></div>
+                                </div>
+                            </th>
+                        </tr>
+                    </tbody>
+                </table>
+        </article>
 
-
-        <div x-data="simpleNoSheetTable('activeTable')" class="w-full flex flex-col">
-            <table class="table-fixed" width="100%" :class="storeId" x-data="{columns:[]}">
-                <thead class="border-b-2">
-                    <tr class="text-center">
-                        <th x-init="columns.push('item')" class="w-1/6 px-4 py-2 text-left">Item</th>
-                        <th x-init="columns.push('steel_m2')" class="w-1/6  px-4 py-2">Steel Used m<sup>2</sup></th>
-                        <th x-init="columns.push('unit_cost')" class="px-4 py-2">Item Cost</th>
-                        <th x-init="columns.push('unit_offer')" class="px-4 py-2">Unit Price</th>
-                        <th x-init="columns.push('quantity')" class="px-4 py-2">Quantity</th>
-                        <th x-init="columns.push('line_cost')" class="px-4 py-2 text-center">Line Cost</th>
-                        <th x-init="columns.push('line_offer')" class="px-4 py-2">Line Offer</th>
-                        <th x-init="columns.push('gross_margin')" class="px-4 py-2 ">Gross Margin</th>
-                    </tr>    
+        <div x-data="simpleNoSheetTable('activeTable')">
+            <table class="table-fixed" :class="storeId" x-data="{columns:[]}">
+                <thead>
+                    <tr>
+                        <th x-init="columns.push('item')">
+                            Item</th>
+                        <th x-init="columns.push('steel_m2')">Steel
+                            Used m<sup>2</sup></th>
+                        <th x-init="columns.push('unit_cost')">Item Cost
+                        </th>
+                        <th x-init="columns.push('unit_offer')">Unit Price
+                        </th>
+                        <th x-init="columns.push('quantity')">Quantity
+                        </th>
+                        <th x-init="columns.push('line_cost')">Line Cost</th>
+                        <th x-init="columns.push('line_offer')">Line Offer
+                        </th>
+                        <th x-init="columns.push('gross_margin')">Gross
+                            Margin</th>
+                    </tr>
                 </thead>
                 <tbody>
                     <template x-for="(item, row_index) in items" :key="row_index">
-                        <tr :id="`${storeId}-row[${row_index}]`" class="hover:bg-gray-200 dark:hover:bg-gray-900 text-xs">
+                        <tr :id="`${storeId}-row[${row_index}]`">
                             <template x-for="(column_name, html_column_index) in columns">
-                                <td x-data="{column_index: storedTable.columnIndex(column_name)}" class="py-3 pr-4" :class="`col_${column_name}`" :id="`${storeId}_cell[${row_index}][${column_index}]`">
+                                <td x-data="{column_index: storedTable.columnIndex(column_name)}"
+                                    :class="`col_${column_name}`"
+                                    :id="`${storeId}_cell[${row_index}][${column_index}]`">
 
                                     <template x-if="[2,3].includes(column_index)">
-                                        <input type="number" min="0" :value="item[column_index]" @input="setCellValue(row_index, column_index, +$el.value)" class="text-right w-5/6 ml-2 border-gray-200 border-2">
+                                        <input type="number" min="0" :value="item[column_index]"
+                                            @input="setCellValue(row_index, column_index, +$el.value)">
                                     </template>
-                                    
+
                                     <template x-if="!column_index">
                                         <!--Don't update on calculation-->
-                                        <span x-text="item[column_index]"></span>                                            
-                                    </template>                                        
+                                        <span x-text="item[column_index]"></span>
+                                    </template>
 
                                     <template x-if="[1,4,5,6].includes(column_index)">
-                                        <!--Update on calculation--> <!-- calculation may occur during load/unload in which case items[row_index] may be 'undefined' -->
-                                        <div x-text="item[column_index].toFixed(2)" x-init="$watch('calculationTick', _ => $el.innerHTML = items[row_index]?.[column_index].toFixed(2))" class="text-right"></div>                                            
-                                    </template>                                        
+                                        <!--Update on calculation-->
+                                        <!-- calculation may occur during load/unload in which case items[row_index] may be 'undefined' -->
+                                        <div x-text="item[column_index].toFixed(2)"
+                                            x-init="$watch('calculationTick', _ => $el.innerHTML = items[row_index]?.[column_index].toFixed(2))">
+                                        </div>
+                                    </template>
 
                                     <template x-if="column_index == 7">
-                                        <!--Update on calculation--> <!-- calculation may occur during load/unload in which case items[row_index] may be 'undefined' -->
-                                        <div x-text="percent_format.format(item[column_index])" x-init="$watch('calculationTick', _ => $el.innerHTML = percent_format.format(items[row_index]?.[column_index]))" class="text-right"></div>                                            
-                                    </template>                                        
+                                        <!--Update on calculation-->
+                                        <!-- calculation may occur during load/unload in which case items[row_index] may be 'undefined' -->
+                                        <div x-text="percent_format.format(item[column_index])"
+                                            x-init="$watch('calculationTick', _ => $el.innerHTML = percent_format.format(items[row_index]?.[column_index]))">
+                                        </div>
+                                    </template>
 
                                 </td>
                             </template>
                         </tr>
                     </template>
                     <tr x-show="isEmpty">
-                        <td colspan="5" class="text-center py-3 text-sm">No matching records found.</td>
+                        <td colspan="5">No matching records
+                            found.</td>
                     </tr>
                 </tbody>
-                <tfoot class="border-t-4">    
+                <tfoot>
                     <tr>
                         <th></th>
                         <th></th>
@@ -309,14 +220,16 @@ document.addEventListener('alpine:init', () => {
                         <th></th>
                         <th></th>
                         <th>
-                            <div x-data="aggregate('total_cost')" x-text="Number(value).toFixed(2)" class="text-right"></div>
+                            <div x-data="aggregate('total_cost')" x-text="Number(value).toFixed(2)">
+                            </div>
                         </th>
                         <th>
-                            <div x-data="aggregate('total_offer')" x-text="Number(value).toFixed(2)" class="text-right"></div>
+                            <div x-data="aggregate('total_offer')" x-text="Number(value).toFixed(2)">
+                            </div>
                         </th>
                         <th></th>
                     </tr>
-                    <tr class="border-t-4">
+                    <tr>
                         <th></th>
                         <th></th>
                         <th></th>
@@ -324,35 +237,14 @@ document.addEventListener('alpine:init', () => {
                         <th></th>
                         <th>Site Profit:</th>
                         <th>
-                            <div x-data="aggregate('profit')" x-text="Number(value).toFixed(2)" class="text-right"></div>
+                            <div x-data="aggregate('profit')" x-text="Number(value).toFixed(2)">
+                            </div>
                         </th>
                         <th>
-                            <span x-data="aggregate('low_margin_warning')" :class="value ? 'text-red-600' : 'text-green-600'">
-                                <div x-data="aggregate('gross_margin', percent_format)" x-text="value" class="text-right"></div>
+                            <span x-data="aggregate('low_margin_warning')"
+                                :class="value ? 'pico-color-red-500' : 'pico-color-green-500'">
+                                <div x-data="aggregate('gross_margin', percent_format)" x-text="value"></div>
                             </span>
-                        </th>
-                    </tr>
-                    <tr>
-                        <th colspan="*">&nbsp;</th>
-                    </tr>
-                    <tr>
-                        <th colspan="5"></th>
-                        <th class="text-left"colspan="*">For All Sites:</th>
-                    </tr>
-                    <tr class="text-center">
-                        <th class="text-right" colspan="5"></th>
-                        <th class="border-gray-200 border-b-2 text-right" x-data="consolidation('total_cost')" x-text="Number(value).toFixed(2)"></th>
-                        <th class="border-gray-200 border-b-2 text-right" x-data="consolidation('total_offer')" x-text="Number(value).toFixed(2)"></th>
-                        <th class="border-gray-200 border-b-2"></th>
-                    </tr>
-                    <tr class="text-center">
-                        <th class="text-right" colspan="5"></th>
-                        <th class="border-gray border-t-4">Profit:</th>
-                        <th class="border-gray border-t-4 text-right" x-data="consolidation('profit')" x-text="Number(value).toFixed(2)"></th>
-                        <th class="border-gray border-t-4">
-                            <div x-data="consolidation('low_margin_warning')" :class="value ? 'text-red-600' : 'text-green-600'">
-                                <div x-data="consolidation('gross_margin', percent_format)" x-text="value" class="text-right"></div>
-                            </div>
                         </th>
                     </tr>
                 </tfoot>
@@ -360,52 +252,62 @@ document.addEventListener('alpine:init', () => {
 
         </div> <!-- simpleTable()-->
         <h3>Steel suppliers</h3>
-        <p>The steel suppliers table calculates the average cost of supply based on the purchase and transportation costs from several suppliers using the <a href="#steel_suppliers">steel_suppliers</a> facet.</p>
-
-        <div x-data="simpleNoSheetTable('steelSuppliers')" class="w-2/3 flex flex-col">
-            <table class="table-fixed" width="100%" :class="storeId" x-data="{columns:[]}">
-                <thead class="border-b-2 text-gray-800">
-                    <tr class="text-center">
-                        <th x-init="columns.push('supplier')" class="w-1/6 px-4 py-2 text-left">Supplier</th>
-                        <th x-init="columns.push('steel_m2')" class="w-2/6 px-4 py-2">Steel Cost<br>m<sup>2</sup></th>
-                        <th x-init="columns.push('transport_m2')" class="w-2/6 px-4 py-2">Transport Cost m<sup>2</sup></th>
-                        <th x-init="columns.push('cost_per_m2')" class="px-4 py-2">Supplier Cost m<sup>2</sup></th> 
-                    </tr>    
+        <article>
+            <p>The steel suppliers table calculates the average cost of supply based on the
+                purchase and transportation costs from several suppliers using the <a
+                    href="#steel_suppliers">steel_suppliers</a> facet.</p>
+        </article>
+        <div x-data="simpleNoSheetTable('steelSuppliers')">
+            <table width="100%" :class="storeId" x-data="{columns:[]}">
+                <thead>
+                    <tr>
+                        <th x-init="columns.push('supplier')">Supplier</th>
+                        <th x-init="columns.push('steel_m2')">Steel
+                            Cost<br>m<sup>2</sup></th>
+                        <th x-init="columns.push('transport_m2')">
+                            Transport Cost m<sup>2</sup></th>
+                        <th x-init="columns.push('cost_per_m2')">Supplier
+                            Cost m<sup>2</sup></th>
+                    </tr>
                 </thead>
                 <tbody>
                     <template x-for="(item, row_index) in items" :key="row_index">
-                        <tr :id="`${storeId}-row[${row_index}]`" class="hover:bg-gray-200 dark:hover:bg-gray-900 text-xs">
+                        <tr :id="`${storeId}-row[${row_index}]`">
                             <template x-for="(column_name, html_column_index) in columns">
-                                <td x-data="{column_index: storedTable.columnIndex(column_name)}" class="pr-4 py-3" :class="`col_${column_name}`" :id="`${storeId}_cell[${row_index}][${column_index}]`">
+                                <td x-data="{column_index: storedTable.columnIndex(column_name)}"
+                                    :class="`col_${column_name}`"
+                                    :id="`${storeId}_cell[${row_index}][${column_index}]`">
 
                                     <template x-if="!column_index">
                                         <!--Don't update on calculation-->
-                                        <span x-text="item[column_index]"></span>                                            
-                                    </template>                                        
+                                        <span x-text="item[column_index]"></span>
+                                    </template>
 
                                     <template x-if="[1,2].includes(column_index)">
-                                        <input type="number" min="0" step="0.1" :value="item[column_index]" @input="setCellValue(row_index, column_index, +$el.value)" class="text-right w-5/6 ml-2 border-gray-200 border-2">
-                                    </template>                                                                            
+                                        <input type="number" min="0" step="0.1" :value="item[column_index]"
+                                            @input="setCellValue(row_index, column_index, +$el.value)">
+                                    </template>
 
                                     <template x-if="3 == column_index">
-                                        <div x-text="item[column_index].toFixed(3)" x-init="$watch('calculationTick', _ => $el.innerHTML = items[row_index]?.[column_index].toFixed(3))" class="text-right"></div>                                            
-                                    </template>                                        
-
+                                        <div x-text="item[column_index].toFixed(3)"
+                                            x-init="$watch('calculationTick', _ => $el.innerHTML = items[row_index]?.[column_index].toFixed(3))">
+                                        </div>
+                                    </template>
                                 </td>
                             </template>
                         </tr>
                     </template>
                     <tr x-show="isEmpty">
-                        <td colspan="5" class="text-center py-3 text-sm">No matching records found.</td>
+                        <td colspan="5">No matching records found.</td>
                     </tr>
                 </tbody>
-                <tfoot class="border-t-4 text-gray-800">    
+                <tfoot>
                     <tr>
                         <th></th>
                         <th></th>
                         <th>Average:</th>
                         <th>
-                            <div x-data="aggregate('average_cost_per_m2')" x-text="Number(value).toFixed(3)" class="text-right"></div>
+                            <div x-data="aggregate('average_cost_per_m2')" x-text="Number(value).toFixed(3)"></div>
                         </th>
                     </tr>
                 </tfoot>
@@ -413,185 +315,198 @@ document.addEventListener('alpine:init', () => {
 
         </div> <!-- simpleTable()-->
 
-        <div class="container mx-auto w-full h-full">
-<h3 id="init">Create and populate the noSheet tables:</h3>                        
-<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl"><span class="c1">//load the data
-</span></span></span><span class="line"><span class="ln"> 2</span><span class="cl"><span class="c1"></span><span class="kr">const</span> <span class="nx">data1</span> <span class="o">=</span> <span class="kr">await</span> <span class="nx">loadJSON</span><span class="p">(</span><span class="s1">&#39;site1.json&#39;</span><span class="p">),</span>
-</span></span><span class="line"><span class="ln"> 3</span><span class="cl">      <span class="nx">data2</span> <span class="o">=</span> <span class="kr">await</span> <span class="nx">loadJSON</span><span class="p">(</span><span class="s1">&#39;site2.json&#39;</span><span class="p">),</span>
-</span></span><span class="line"><span class="ln"> 4</span><span class="cl">      <span class="nx">data3</span> <span class="o">=</span> <span class="kr">await</span> <span class="nx">loadJSON</span><span class="p">(</span><span class="s1">&#39;site3.json&#39;</span><span class="p">),</span>
-</span></span><span class="line"><span class="ln"> 5</span><span class="cl">      <span class="nx">data4</span> <span class="o">=</span> <span class="kr">await</span> <span class="nx">loadJSON</span><span class="p">(</span><span class="s1">&#39;steel_suppliers.json&#39;</span><span class="p">);</span> 
-</span></span><span class="line"><span class="ln"> 6</span><span class="cl">
-</span></span><span class="line"><span class="ln"> 7</span><span class="cl"><span class="c1">//
-</span></span></span><span class="line"><span class="ln"> 8</span><span class="cl"><span class="c1">//create and define the stack; which acts as a table factory and allows us to use consolidation facets
-</span></span></span><span class="line"><span class="ln"> 9</span><span class="cl"><span class="c1">//        
-</span></span></span><span class="line"><span class="ln">10</span><span class="cl"><span class="c1"></span><span class="kd">let</span> <span class="nx">stack</span> <span class="o">=</span> <span class="nx">defineStack</span><span class="p">(</span><span class="s1">&#39;item&#39;</span><span class="p">,</span> <span class="s1">&#39;steel_m2&#39;</span><span class="p">,</span> <span class="s1">&#39;unit_offer&#39;</span><span class="p">,</span> <span class="s1">&#39;quantity&#39;</span><span class="p">),</span>
-</span></span><span class="line"><span class="ln">11</span><span class="cl">    <span class="nx">site_1</span> <span class="o">=</span> <span class="nx">stack</span><span class="p">.</span><span class="nx">createTable</span><span class="p">(</span><span class="s1">&#39;site1&#39;</span><span class="p">),</span>
-</span></span><span class="line"><span class="ln">12</span><span class="cl">    <span class="nx">site_2</span> <span class="o">=</span> <span class="nx">stack</span><span class="p">.</span><span class="nx">createTable</span><span class="p">(</span><span class="s1">&#39;site2&#39;</span><span class="p">),</span>
-</span></span><span class="line"><span class="ln">13</span><span class="cl">    <span class="nx">site_3</span> <span class="o">=</span> <span class="nx">stack</span><span class="p">.</span><span class="nx">createTable</span><span class="p">(</span><span class="s1">&#39;site3&#39;</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">14</span><span class="cl">
-</span></span><span class="line"><span class="ln">15</span><span class="cl"><span class="c1">//set the facets used by the stack
-</span></span></span><span class="line"><span class="ln">16</span><span class="cl"><span class="c1"></span><span class="nx">stack</span><span class="p">.</span><span class="nx">addFacets</span><span class="p">(</span><span class="nx">raw_materials</span><span class="p">,</span> <span class="nx">lineitems</span><span class="p">,</span> <span class="nx">gross_margin</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">17</span><span class="cl">
-</span></span><span class="line"><span class="ln">18</span><span class="cl"><span class="c1">//set a consolidation facet
-</span></span></span><span class="line"><span class="ln">19</span><span class="cl"><span class="c1"></span><span class="nx">stack</span><span class="p">.</span><span class="nx">consolidate</span><span class="p">(</span><span class="nx">consolidation</span><span class="p">);</span>            
-</span></span><span class="line"><span class="ln">20</span><span class="cl">
-</span></span><span class="line"><span class="ln">21</span><span class="cl"><span class="c1">//
-</span></span></span><span class="line"><span class="ln">22</span><span class="cl"><span class="c1">//populate the tables
-</span></span></span><span class="line"><span class="ln">23</span><span class="cl"><span class="c1">//
-</span></span></span><span class="line"><span class="ln">24</span><span class="cl"><span class="c1"></span><span class="nx">site_1</span><span class="p">.</span><span class="nx">load</span><span class="p">(</span><span class="nx">data1</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">25</span><span class="cl"><span class="nx">site_2</span><span class="p">.</span><span class="nx">load</span><span class="p">(</span><span class="nx">data2</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">26</span><span class="cl"><span class="nx">site_3</span><span class="p">.</span><span class="nx">load</span><span class="p">(</span><span class="nx">data3</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">27</span><span class="cl">
-</span></span><span class="line"><span class="ln">28</span><span class="cl"><span class="c1">//Create a table for the steel suppliers
-</span></span></span><span class="line"><span class="ln">29</span><span class="cl"><span class="c1"></span><span class="kd">let</span> <span class="nx">suppliers</span> <span class="o">=</span> <span class="nx">createTable</span><span class="p">([</span><span class="s1">&#39;supplier&#39;</span><span class="p">,</span> <span class="s1">&#39;steel_m2&#39;</span><span class="p">,</span> <span class="s1">&#39;transport_m2&#39;</span><span class="p">],</span> <span class="nx">steel_suppliers</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">30</span><span class="cl">
-</span></span><span class="line"><span class="ln">31</span><span class="cl"><span class="c1">//load and calculate
-</span></span></span><span class="line"><span class="ln">32</span><span class="cl"><span class="c1"></span><span class="nx">suppliers</span><span class="p">.</span><span class="nx">load</span><span class="p">(</span><span class="nx">data4</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">33</span><span class="cl"><span class="nx">suppliers</span><span class="p">.</span><span class="nx">calculate</span><span class="p">();</span>
-</span></span><span class="line"><span class="ln">34</span><span class="cl">
-</span></span><span class="line"><span class="ln">35</span><span class="cl"><span class="c1">//Set the average_steel_cost_m2 reference required by the raw_materials facets to use
-</span></span></span><span class="line"><span class="ln">36</span><span class="cl"><span class="c1">//the average_cost_per_m2 aggregate from the suppliers table
-</span></span></span><span class="line"><span class="ln">37</span><span class="cl"><span class="c1"></span><span class="nx">stack</span><span class="p">.</span><span class="nx">setDefaultReferences</span><span class="p">(</span> <span class="kd">function</span><span class="p">(</span><span class="nx">uses</span><span class="p">)</span> <span class="p">{</span>
-</span></span><span class="line"><span class="ln">38</span><span class="cl">
-</span></span><span class="line"><span class="ln">39</span><span class="cl">    <span class="k">this</span><span class="p">.</span><span class="nx">average_steel_cost_m2</span> <span class="o">=</span> <span class="nx">uses</span><span class="p">(</span><span class="nx">suppliers</span><span class="p">).</span><span class="nx">average_cost_per_m2</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln">40</span><span class="cl"><span class="p">});</span>  
-</span></span></code></pre></div>
-<h3>The raw_materials facet:</h3>
+        <div>
+            <div>
+                <hr>
+                <h3>Create and populate the noSheet table:</h3>
+                <pre>
+                <code id="prism-1" class="language-javascript"></code>
+            </pre>
+                <h3 id="raw_materials">The raw materials facet:</h3>
+                <pre>
+                <code src="/js/examples/facets/raw_materials.mjs" class="prism-fetch language-javascript"></code>
+            </pre>
+                <h3 id="lineitems">The line items facet:</h3>
+                <pre>
+                <code src="/js/examples/facets/lineitems.mjs" class="prism-fetch language-javascript"></code>
+            </pre>
+                <h3 id="gross_margin">The gross margin facet:</h3>
+                <pre>
+                <code src="/js/examples/facets/gross_margin.mjs" class="prism-fetch language-javascript"></code>
+            </pre>
+                </pre>
+                <h3 id="consolidation">The consolidation facet:</h3>
+                <pre>
+                <code src="/js/examples/facets/consolidation.mjs" class="prism-fetch language-javascript"></code>
+            </pre>
+                </pre>
+                <h3 id="steel_suppliers">The steel suppliers facet:</h3>
+                <pre>
+                <code src="/js/examples/facets/steel_suppliers.mjs" class="prism-fetch language-javascript"></code>
+            </pre>
 
+            </div>
+    </main>
 
+    <script>
+        const SUM = formulajs.SUM,
+            AVERAGE = formulajs.AVERAGE;
 
-<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln">1</span><span class="cl"><span class="s2">&#34;use strict&#34;</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln">2</span><span class="cl"><span class="cm">/**
-</span></span></span><span class="line"><span class="ln">3</span><span class="cl"><span class="cm">Calculate line item cost from raw materials
-</span></span></span><span class="line"><span class="ln">4</span><span class="cl"><span class="cm">*/</span>
-</span></span><span class="line"><span class="ln">5</span><span class="cl"><span class="kr">export</span> <span class="k">default</span> <span class="kd">function</span><span class="p">(</span><span class="nx">table</span><span class="p">,</span> <span class="nx">row</span><span class="p">,</span> <span class="nx">refs</span><span class="p">)</span> <span class="p">{</span>
-</span></span><span class="line"><span class="ln">6</span><span class="cl">
-</span></span><span class="line"><span class="ln">7</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">unit_cost</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">row</span><span class="p">.</span><span class="nx">steel_m2</span> <span class="o">*</span> <span class="p">(</span><span class="nx">refs</span><span class="p">.</span><span class="nx">manufacturing_cost_per_m2</span> <span class="o">+</span> <span class="nx">refs</span><span class="p">.</span><span class="nx">average_steel_cost_m2</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">8</span><span class="cl"><span class="p">};</span></span></span></code></pre></div>
-<h3>The lineitems facet:</h3>
+        var percent_format = new Intl.NumberFormat(undefined, { style: "percent" });
 
+        //
+        // Load the noSheet library, facets and create and populate a table
+        //    
+        var whenNoSheetReady = new Promise((resolve) => {
 
+            (async () => {
 
-<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl"><span class="s2">&#34;use strict&#34;</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln"> 2</span><span class="cl"><span class="cm">/**
-</span></span></span><span class="line"><span class="ln"> 3</span><span class="cl"><span class="cm">A simple invoice/quotation calculator
-</span></span></span><span class="line"><span class="ln"> 4</span><span class="cl"><span class="cm">*/</span>
-</span></span><span class="line"><span class="ln"> 5</span><span class="cl"><span class="kr">export</span> <span class="k">default</span> <span class="kd">function</span><span class="p">(</span><span class="nx">table</span><span class="p">,</span> <span class="nx">row</span><span class="p">)</span> <span class="p">{</span>
-</span></span><span class="line"><span class="ln"> 6</span><span class="cl">
-</span></span><span class="line"><span class="ln"> 7</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">line_cost</span>     <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">row</span><span class="p">.</span><span class="nx">quantity</span> <span class="o">*</span> <span class="nx">row</span><span class="p">.</span><span class="nx">unit_cost</span><span class="p">;</span>    
-</span></span><span class="line"><span class="ln"> 8</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">line_offer</span>    <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">row</span><span class="p">.</span><span class="nx">quantity</span> <span class="o">*</span> <span class="nx">row</span><span class="p">.</span><span class="nx">unit_offer</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln"> 9</span><span class="cl">
-</span></span><span class="line"><span class="ln">10</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">total_quantity</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;quantity&#39;</span><span class="p">));</span>
-</span></span><span class="line"><span class="ln">11</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">total_cost</span>     <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;line_cost&#39;</span><span class="p">));</span>
-</span></span><span class="line"><span class="ln">12</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">total_offer</span>    <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;line_offer&#39;</span><span class="p">));</span>
-</span></span><span class="line"><span class="ln">13</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">profit</span>         <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">table</span><span class="p">.</span><span class="nx">total_offer</span> <span class="o">-</span> <span class="nx">table</span><span class="p">.</span><span class="nx">total_cost</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln">14</span><span class="cl"><span class="p">};</span></span></span></code></pre></div>
-<h3>The gross_margin facet:</h3>    
+                //the library
+                const { defineStack, createTable } = await import('/js/nosheet.min.mjs');
 
+                //the facets
+                const { default: raw_materials } = await import('/js/examples/facets/raw_materials.mjs');
+                const { default: lineitems } = await import('/js/examples/facets/lineitems.mjs');
+                const { default: gross_margin } = await import('/js/examples/facets/gross_margin.mjs');
+                const { default: steel_suppliers } = await import('/js/examples/facets/steel_suppliers.mjs');
+                const { default: consolidation } = await import('/js/examples/facets/consolidation.mjs');
 
+                //-prism
+                //load the data
+                const data1 = await loadJSON('/js/examples/data/example_1.json'),
+                    data2 = await loadJSON('/js/examples/data/example_3_site_2.json'),
+                    data3 = await loadJSON('/js/examples/data/example_3_site_3.json'),
+                    data4 = await loadJSON('/js/examples/data/example_3_steel_suppliers.json');
 
-<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl"><span class="s2">&#34;use strict&#34;</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln"> 2</span><span class="cl"><span class="cm">/**
-</span></span></span><span class="line"><span class="ln"> 3</span><span class="cl"><span class="cm"> * Calculate the gross margin for line items and for the whole table
-</span></span></span><span class="line"><span class="ln"> 4</span><span class="cl"><span class="cm"> * 
-</span></span></span><span class="line"><span class="ln"> 5</span><span class="cl"><span class="cm"> * @param {*} table     Table query object
-</span></span></span><span class="line"><span class="ln"> 6</span><span class="cl"><span class="cm"> * @param {*} row       The table row
-</span></span></span><span class="line"><span class="ln"> 7</span><span class="cl"><span class="cm"> * @param {*} refs      External references
-</span></span></span><span class="line"><span class="ln"> 8</span><span class="cl"><span class="cm"> */</span>
-</span></span><span class="line"><span class="ln"> 9</span><span class="cl"><span class="kr">export</span> <span class="k">default</span> <span class="kd">function</span><span class="p">(</span><span class="nx">table</span><span class="p">,</span> <span class="nx">row</span><span class="p">,</span> <span class="nx">refs</span><span class="p">)</span> <span class="p">{</span>
-</span></span><span class="line"><span class="ln">10</span><span class="cl">
-</span></span><span class="line"><span class="ln">11</span><span class="cl">    <span class="cm">/**
-</span></span></span><span class="line"><span class="ln">12</span><span class="cl"><span class="cm">     * The row Gross Margin
-</span></span></span><span class="line"><span class="ln">13</span><span class="cl"><span class="cm">     * @returns number
-</span></span></span><span class="line"><span class="ln">14</span><span class="cl"><span class="cm">     */</span>    
-</span></span><span class="line"><span class="ln">15</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">gross_margin</span>  <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="mi">1</span> <span class="o">-</span> <span class="p">(</span><span class="nx">row</span><span class="p">.</span><span class="nx">unit_cost</span> <span class="o">/</span> <span class="nx">row</span><span class="p">.</span><span class="nx">unit_offer</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">16</span><span class="cl">
-</span></span><span class="line"><span class="ln">17</span><span class="cl">    <span class="cm">/**
-</span></span></span><span class="line"><span class="ln">18</span><span class="cl"><span class="cm">     * The total Gross Margin
-</span></span></span><span class="line"><span class="ln">19</span><span class="cl"><span class="cm">     * @returns number
-</span></span></span><span class="line"><span class="ln">20</span><span class="cl"><span class="cm">     */</span>    
-</span></span><span class="line"><span class="ln">21</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">gross_margin</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="mi">1</span> <span class="o">-</span> <span class="p">(</span><span class="nx">table</span><span class="p">.</span><span class="nx">total_cost</span> <span class="o">/</span> <span class="nx">table</span><span class="p">.</span><span class="nx">total_offer</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">22</span><span class="cl">
-</span></span><span class="line"><span class="ln">23</span><span class="cl">    <span class="cm">/**
-</span></span></span><span class="line"><span class="ln">24</span><span class="cl"><span class="cm">     * Returns true if the total Gross Margin is below the system threshold
-</span></span></span><span class="line"><span class="ln">25</span><span class="cl"><span class="cm">     * @returns boolean
-</span></span></span><span class="line"><span class="ln">26</span><span class="cl"><span class="cm">     */</span>    
-</span></span><span class="line"><span class="ln">27</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">low_margin_warning</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">table</span><span class="p">.</span><span class="nx">gross_margin</span> <span class="o">&lt;=</span> <span class="nx">refs</span><span class="p">.</span><span class="nx">low_margin_threshold</span> <span class="o">/</span> <span class="mi">100</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln">28</span><span class="cl"><span class="p">};</span></span></span></code></pre></div>
-<h3 id="consolidation">The consolidation facet:</h3>    
+                //
+                //create and define the stack, which acts as a table factory and allows us to use consolidation facets
+                //        
+                let stack = defineStack('item', 'steel_m2', 'unit_offer', 'quantity'),
+                    site_1 = stack.createTable('site1'),
+                    site_2 = stack.createTable('site2'),
+                    site_3 = stack.createTable('site3');
 
+                //set the facets used by the stack
+                stack.addFacets(raw_materials, lineitems, gross_margin);
 
+                //set a consolidation facet
+                stack.consolidate(consolidation);
 
-<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln"> 1</span><span class="cl"><span class="s2">&#34;use strict&#34;</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln"> 2</span><span class="cl"><span class="cm">/**
-</span></span></span><span class="line"><span class="ln"> 3</span><span class="cl"><span class="cm"> * Consolidate table stack line items
-</span></span></span><span class="line"><span class="ln"> 4</span><span class="cl"><span class="cm"> * 
-</span></span></span><span class="line"><span class="ln"> 5</span><span class="cl"><span class="cm"> * @param {*} columns   Table columns query object
-</span></span></span><span class="line"><span class="ln"> 6</span><span class="cl"><span class="cm"> * @param {*} refs      External references
-</span></span></span><span class="line"><span class="ln"> 7</span><span class="cl"><span class="cm"> */</span>
-</span></span><span class="line"><span class="ln"> 8</span><span class="cl"><span class="kr">export</span> <span class="k">default</span> <span class="kd">function</span><span class="p">(</span><span class="nx">columns</span><span class="p">,</span> <span class="nx">refs</span><span class="p">)</span> <span class="p">{</span>
-</span></span><span class="line"><span class="ln"> 9</span><span class="cl">
-</span></span><span class="line"><span class="ln">10</span><span class="cl">    <span class="cm">/**
-</span></span></span><span class="line"><span class="ln">11</span><span class="cl"><span class="cm">     * The total cost of all the line items in the table stack
-</span></span></span><span class="line"><span class="ln">12</span><span class="cl"><span class="cm">     * @returns number
-</span></span></span><span class="line"><span class="ln">13</span><span class="cl"><span class="cm">     */</span>
-</span></span><span class="line"><span class="ln">14</span><span class="cl">    <span class="k">this</span><span class="p">.</span><span class="nx">total_cost</span>  <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span> <span class="p">...</span><span class="nx">columns</span><span class="p">(</span><span class="s1">&#39;line_cost&#39;</span><span class="p">)</span> <span class="p">);</span>
-</span></span><span class="line"><span class="ln">15</span><span class="cl">
-</span></span><span class="line"><span class="ln">16</span><span class="cl">    <span class="cm">/**
-</span></span></span><span class="line"><span class="ln">17</span><span class="cl"><span class="cm">     * The total offer price of all the line items in the table stack
-</span></span></span><span class="line"><span class="ln">18</span><span class="cl"><span class="cm">     * @returns number
-</span></span></span><span class="line"><span class="ln">19</span><span class="cl"><span class="cm">     */</span>
-</span></span><span class="line"><span class="ln">20</span><span class="cl">    <span class="k">this</span><span class="p">.</span><span class="nx">total_offer</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">SUM</span><span class="p">(</span> <span class="p">...</span><span class="nx">columns</span><span class="p">(</span><span class="s1">&#39;line_offer&#39;</span><span class="p">)</span> <span class="p">);</span>
-</span></span><span class="line"><span class="ln">21</span><span class="cl">
-</span></span><span class="line"><span class="ln">22</span><span class="cl">    <span class="cm">/**
-</span></span></span><span class="line"><span class="ln">23</span><span class="cl"><span class="cm">     * Total profit
-</span></span></span><span class="line"><span class="ln">24</span><span class="cl"><span class="cm">     * @returns number
-</span></span></span><span class="line"><span class="ln">25</span><span class="cl"><span class="cm">     */</span>
-</span></span><span class="line"><span class="ln">26</span><span class="cl">    <span class="k">this</span><span class="p">.</span><span class="nx">profit</span>      <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="k">this</span><span class="p">.</span><span class="nx">total_offer</span> <span class="o">-</span> <span class="k">this</span><span class="p">.</span><span class="nx">total_cost</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln">27</span><span class="cl">
-</span></span><span class="line"><span class="ln">28</span><span class="cl">    <span class="cm">/**
-</span></span></span><span class="line"><span class="ln">29</span><span class="cl"><span class="cm">     * The total Gross Margin
-</span></span></span><span class="line"><span class="ln">30</span><span class="cl"><span class="cm">     * @returns number
-</span></span></span><span class="line"><span class="ln">31</span><span class="cl"><span class="cm">     */</span>
-</span></span><span class="line"><span class="ln">32</span><span class="cl">    <span class="k">this</span><span class="p">.</span><span class="nx">gross_margin</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="mi">1</span> <span class="o">-</span> <span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">total_cost</span> <span class="o">/</span> <span class="k">this</span><span class="p">.</span><span class="nx">total_offer</span><span class="p">);</span>
-</span></span><span class="line"><span class="ln">33</span><span class="cl">
-</span></span><span class="line"><span class="ln">34</span><span class="cl">    <span class="cm">/**
-</span></span></span><span class="line"><span class="ln">35</span><span class="cl"><span class="cm">     * Returns true if the total Gross Margin is below the system threshold
-</span></span></span><span class="line"><span class="ln">36</span><span class="cl"><span class="cm">     * @returns boolean
-</span></span></span><span class="line"><span class="ln">37</span><span class="cl"><span class="cm">     */</span>
-</span></span><span class="line"><span class="ln">38</span><span class="cl">    <span class="k">this</span><span class="p">.</span><span class="nx">low_margin_warning</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="k">this</span><span class="p">.</span><span class="nx">gross_margin</span> <span class="o">&lt;=</span> <span class="nx">refs</span><span class="p">.</span><span class="nx">low_margin_threshold</span> <span class="o">/</span> <span class="mi">100</span><span class="p">;</span>            
-</span></span><span class="line"><span class="ln">39</span><span class="cl"><span class="p">};</span></span></span></code></pre></div>
-<h3 id="steel_suppliers">The steel_suppliers facet:</h3>    
+                //
+                //populate the tables
+                //
+                site_1.load(data1);
+                site_2.load(data2);
+                site_3.load(data3);
 
+                //Create a table for the steel suppliers
+                let suppliers = createTable(['supplier', 'steel_m2', 'transport_m2'], steel_suppliers);
 
+                //load and calculate
+                suppliers.load(data4);
+                suppliers.calculate();
 
-<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-javascript" data-lang="javascript"><span class="line"><span class="ln">1</span><span class="cl"><span class="s2">&#34;use strict&#34;</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln">2</span><span class="cl"><span class="cm">/**
-</span></span></span><span class="line"><span class="ln">3</span><span class="cl"><span class="cm">Calculate steel supply costs
-</span></span></span><span class="line"><span class="ln">4</span><span class="cl"><span class="cm">*/</span>
-</span></span><span class="line"><span class="ln">5</span><span class="cl"><span class="kr">export</span> <span class="k">default</span> <span class="kd">function</span><span class="p">(</span><span class="nx">table</span><span class="p">,</span> <span class="nx">row</span><span class="p">,</span> <span class="nx">refs</span><span class="p">)</span> <span class="p">{</span>
-</span></span><span class="line"><span class="ln">6</span><span class="cl">
-</span></span><span class="line"><span class="ln">7</span><span class="cl">    <span class="nx">row</span><span class="p">.</span><span class="nx">cost_per_m2</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">row</span><span class="p">.</span><span class="nx">steel_m2</span> <span class="o">+</span> <span class="nx">row</span><span class="p">.</span><span class="nx">transport_m2</span><span class="p">;</span>
-</span></span><span class="line"><span class="ln">8</span><span class="cl">    <span class="nx">table</span><span class="p">.</span><span class="nx">average_cost_per_m2</span> <span class="o">=</span> <span class="p">()</span> <span class="p">=&gt;</span> <span class="nx">AVERAGE</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">column</span><span class="p">(</span><span class="s1">&#39;cost_per_m2&#39;</span><span class="p">));</span>
-</span></span><span class="line"><span class="ln">9</span><span class="cl"><span class="p">};</span></span></span></code></pre></div>
-   
-        </div>
+                //Set the average_steel_cost_m2 reference required by the raw_materials facets to use
+                //the average_cost_per_m2 aggregate from the suppliers table
+                stack.setDefaultReferences(function (uses) {
 
-    </div>
-</div>
+                    this.average_steel_cost_m2 = uses(suppliers).average_cost_per_m2;
+                });
+                //-prism
 
+                resolve([stack, site_1, site_2, site_3, suppliers]);
+            })()
+        });
 
-  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>
+        function referenceHandler(referenceName) {
+            return {
 
+                init() {
 
+                    //watch the store for reference initialization
+                    this.$watch(`$store.${referenceName}`, (newHandler, oldHandler) => {
+                        this.value = newHandler.value;
+                    })
+                },
+                value: '',
+                input: {
+                    ['@input'](event) {
+                        Alpine.store(referenceName).value = +event.srcElement.value;
+                    },
+                },
+            };
+        };
 
-          </article>
+        let unavailable = Symbol('unavailable');
 
-          
-          <div class="fluidity-decorative-gradient-line"></div>
-        </div>
-      </div>
-    </div>
-  </div></main>
-  </div></body>
+        function ifAvailable(obj, fn) {
+
+            let isAvailable = obj !== unavailable;
+
+            return fn && isAvailable ? fn(obj) : isAvailable;
+        }
+
+        //
+        //Plumb in Alpine
+        //
+        document.addEventListener('alpine:init', () => {
+
+            console.log('alpine:init');
+
+            Alpine.data('consolidation', (name, formatter) => ({
+
+                init() {
+                    //watch the store
+                    this.$watch(`$store.consolidated`, (new_value, old_value) => {
+
+                        this.calculatedValue = Alpine.store('siteStack')[name].valueOf();
+                    });
+                },
+
+                calculatedValue: undefined,
+
+                get value() {
+
+                    let v = this.calculatedValue ?? Alpine.store('siteStack')[name]?.valueOf();
+
+                    return !formatter ? v : formatter.format(v);
+                },
+            }));
+
+            Alpine.store('steelSuppliers', unavailable);
+            Alpine.store('activeTable', unavailable);
+            Alpine.store('siteStack', unavailable);
+            Alpine.store('consolidated', 0);
+
+            whenNoSheetReady.then(([theStack, site1, site2, site3, suppliers]) => {
+
+                console.log('whenNoSheetReady');
+
+                //Define some reference handles
+                Alpine.store('low_margin_threshold', theStack.tables().getReferenceHandle('low_margin_threshold', 30));
+                Alpine.store('manufacturing_cost_per_m2', theStack.tables().getReferenceHandle('manufacturing_cost_per_m2', 0.3));
+
+                //set the consolidation refernces to mirror the table consolidation handle
+                theStack.setConsolidationReferences(function (uses) {
+
+                    this.low_margin_threshold = Alpine.store('low_margin_threshold').value;
+                });
+
+                //increment the consolidation tick to force UI update
+                theStack.afterConsolidation(_ => {
+                    Alpine.store('consolidated', Alpine.store('consolidated') + 1);
+                });
+
+                theStack.tables().calculate();
+
+                //update the store with the init'd objects
+                Alpine.store('siteStack', theStack);
+                Alpine.store('activeTable', site1);
+                Alpine.store('steelSuppliers', suppliers);
+            });
+        });       
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>
+</body>
+
 </html>
