@@ -1,0 +1,56 @@
+extends layout
+
+block eof_head
+  style.
+    .parent {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: 1fr;
+        grid-column-gap: var(--pico-spacing);
+        grid-row-gap: 0px;
+    }
+    .div1 {
+        grid-area: 1 / 1 / 2 / 2;
+    }
+
+    .div2 {
+        grid-area: 1 / 2 / 2 / 3;
+    }  
+
+block content
+  hgroup
+    h1= title
+    h3 An example of using noSheet in the back-end
+
+    article(x-data="{cost:0.3, threshold:30}")
+      form
+          fieldset
+              .parent
+                  .div1
+                      label(for="Manufacturing_Cost") Manufacturing Cost:
+                        input#Manufacturing_Cost(x-model="cost", type="number", min="0", max="100", step="0.1")
+                        label(for="Manufacturing_Cost") per m <sup>2</sup>
+
+                  .div2
+                      label(for="Margin_Threshold") Margin Threshold:
+                        input#Margin_Threshold(x-model="threshold", type="number", min="0", max="100")
+              hr
+        button(@click="update_quotes(cost, threshold)") Save 
+
+block eof_body                        
+  script.
+      //
+      //Plumb in Alpine
+      //
+      document.addEventListener('alpine:init', () => {
+
+          console.log('alpine:init');
+      });       
+
+      function update_quotes(cost, threshold){
+        console.log(cost, threshold);
+      }
+
+      console.log( fetch('/quotes'));
+      
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>                        
