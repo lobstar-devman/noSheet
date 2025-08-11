@@ -27,6 +27,9 @@ const quotes = defineStack('item', 'steel_m2', 'unit_offer', 'quantity');
 //set the facets used by the stack
 quotes.addFacets(raw_materials, lineitems, gross_margin);      
 
+//set a consolidation facet
+quotes.consolidate(consolidation);
+
 /* GET quotes listing. */
 router.get('/', function(req, res, next) {
 
@@ -37,9 +40,14 @@ router.get('/', function(req, res, next) {
       this.manufacturing_cost_per_m2 = +req.query.manufacturing_cost_per_m2;
       this.low_margin_threshold      = +req.query.low_margin_threshold;
   });
+
+  quotes.setConsolidationReferences(function (uses) {
+
+      this.low_margin_threshold = +req.query.low_margin_threshold;
+  });  
   
-  let response = [],
-      folder   = join(appDir, 'data');
+  let tables = new Map(),
+      folder = join(appDir, 'data');
 
   const dir = fs.opendirSync(folder);
 
@@ -48,21 +56,33 @@ router.get('/', function(req, res, next) {
   //read each quote into a table and calculate
   while ((dirent = dir.readSync()) !== null) {
 
-    let table = quotes.createTable(dirent.name);
-    table.load( JSON.parse(fs.readFileSync( join(dirent.parentPath,dirent.name), 'utf8')) );
-    table.calculate();
+    let table = quotes.createTable();
 
-    response.push({
-          name         : dirent.name,
-          cost         : table.total_cost,
-          offer        : table.total_offer,
-          profit       : table.profit, 
-          gross_margin : table.gross_margin,
-          low_margin   : table.low_margin_warning
-    })
+    table.load( JSON.parse(fs.readFileSync( join(dirent.parentPath, dirent.name), 'utf8')) );
+    tables.set(dirent.name, table);
   }
 
   dir.closeSync();
+
+  quotes.tables().calculate();  
+
+  let response = [...tables.entries()].map(([k, v]) => (console.log(k,v),{
+        name         : k, 
+        cost         : v.total_cost,
+        offer        : v.total_offer,
+        profit       : v.profit,
+        gross_margin : v.gross_margin,
+        low_margin   : v.low_margin_warning
+    }));
+
+    response.push({
+      name: 'TOTAL',
+        cost         : quotes.total_cost,
+        offer        : quotes.total_offer,
+        profit       : quotes.profit,
+        gross_margin : quotes.gross_margin,
+        low_margin   : quotes.low_margin_warning
+    })
 
   res.send(response);
 });
