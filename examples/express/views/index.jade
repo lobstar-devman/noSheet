@@ -1,0 +1,92 @@
+extends layout
+
+block eof_head
+  style.
+    /*Thank you https://cssgrid-generator.netlify.app/ */
+    .gridA {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: 1fr;
+        grid-column-gap: var(--pico-spacing);
+        grid-row-gap: 0px;
+    }
+    .gridA .div1 { grid-area: 1 / 1 / 2 / 2; }
+
+    .gridA .div2 { grid-area: 1 / 2 / 2 / 3; }  
+
+    thead th { text-align: center; }
+    td:not(:first-child):not(:last-child) { text-align: right; }
+    td:last-child { text-align: center; }
+
+block content
+  hgroup
+    h1= title
+    h3 An example of using noSheet in the back-end
+
+    article(x-data="query_quotes")
+      form
+          p Adjust the manufacturing cost and margin threshold to see the impact on the quotes in the system
+          fieldset
+              .gridA
+                  .div1
+                      label(for="Manufacturing_Cost") Manufacturing Cost:
+                        input#Manufacturing_Cost(x-model="cost", type="number", min="0", max="100", step="0.1")
+                        label(for="Manufacturing_Cost") per m <sup>2</sup>
+
+                  .div2
+                      label(for="Margin_Threshold") Margin Threshold:
+                        input#Margin_Threshold(x-model="threshold", type="number", min="0", max="100")
+
+        button(@click="query()" x-init="query()") Query
+
+      hr
+      table
+        thead 
+          tr 
+            th(scope="col") Quote
+            th(scope="col") Total Cost
+            th(scope="col") Total Offer
+            th(scope="col") Profit
+            th(scope="col") Gross Margin %
+            th(scope="col") Low Margin Warning
+        tbody
+          template(x-for="quote in quotes")
+            tr
+              th(scope="row" x-text="quote.name")
+              td(x-text="quote.cost.toFixed(2)")
+              td(x-text="quote.offer.toFixed(2)")
+              td(x-text="quote.profit.toFixed(2)")
+              td(x-text="(quote.gross_margin *100).toFixed(1)")
+              td(x-text="quote.low_margin ? '⚠' : ''")
+
+block eof_body                        
+  script.
+      //
+      //Plumb in Alpine
+      //
+      document.addEventListener('alpine:init', () => {
+
+          console.log('alpine:init');
+
+          Alpine.data('query_quotes', () => ({
+              cost:0.3, 
+              threshold:30,
+              quotes: [],
+  
+              query() {
+  
+                fetch(`/quotes?manufacturing_cost_per_m2=${this.cost}&low_margin_threshold=${this.threshold}`)
+                  .then(response => this.quotes = response.json());
+                }
+          }));          
+      });       
+
+      function update_quotes(cost, threshold){
+        fetch(`/quotes?manufacturing_cost_per_m2=${cost}&low_margin_threshold=${threshold}`)
+          .then(response => response.json())
+          .then(quotes  => {
+
+          });
+      }
+     
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>                        

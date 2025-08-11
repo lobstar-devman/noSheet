@@ -1,0 +1,18 @@
+doctype html
+html(data-theme="light")
+  head
+    title=title
+    link(rel='stylesheet', href='https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css')
+    style.
+      :root {
+          --pico-font-size: 100%;
+      }
+      input[type="number"] {
+          margin-bottom: 0;
+      }  
+    block eof_head
+  body
+    main 
+      article
+        block content
+    block eof_body
