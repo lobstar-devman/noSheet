@@ -1,8 +1,13 @@
+"use strict";
+
 const fs = require('fs');
 const { join, dirname } = require('path');
 
 var express = require('express');
 var router = express.Router();
+
+const formulajs = require('@formulajs/formulajs');
+global.SUM = formulajs.SUM;
 
 const appDir    = dirname(dirname(require.main.filename));
 const libDir    = join(appDir, '..', '..');
@@ -25,17 +30,26 @@ quotes.addFacets(raw_materials, lineitems, gross_margin);
 /* GET quotes listing. */
 router.get('/', function(req, res, next) {
 
+  //Set the default facet references from the query string
+  quotes.setDefaultReferences(function () {
+
+      this.average_steel_cost_m2     = 0.2;
+      this.manufacturing_cost_per_m2 = +req.query.manufacturing_cost_per_m2;
+      this.low_margin_threshold      = +req.query.low_margin_threshold;
+  });
+  
   let response = [],
-      folder = join(appDir, 'data');
+      folder   = join(appDir, 'data');
 
   const dir = fs.opendirSync(folder);
 
   let dirent;
 
+  //read each quote into a table and calculate
   while ((dirent = dir.readSync()) !== null) {
 
     let table = quotes.createTable(dirent.name);
-    table.load(  JSON.parse(fs.readFileSync( join(dirent.parentPath,dirent.name), 'utf8')) );
+    table.load( JSON.parse(fs.readFileSync( join(dirent.parentPath,dirent.name), 'utf8')) );
     table.calculate();
 
     response.push({
