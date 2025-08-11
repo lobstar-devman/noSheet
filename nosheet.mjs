@@ -533,7 +533,7 @@ class TableFactory {
 
                 let tables = [...parent_scope.#tag_cloud.list(...tags)].map( id => parent_scope.#table_interfaces.get(id).table );
 
-                //if only one aggregate is requested reutrn that as a single array
+                //if only one aggregate is requested return that as a single array
                 if( 1 == names.length ){
 
                     return tables.map(t => t.getAttribute(names[0]));
