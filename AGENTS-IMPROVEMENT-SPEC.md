@@ -11,30 +11,23 @@ Repository state: initial commit, no source code.
 |---|---|
 | Dev container present | `.devcontainer/devcontainer.json` exists and is valid. |
 | AGENTS.md created | Baseline file now exists (created during this audit). |
+| Project language defined | TypeScript / Node.js 24, npm. ✅ resolved |
+| Dev container image updated | Switched to `javascript-node:24`. ✅ resolved |
+| Tooling conventions documented | Lint, format, typecheck, test, build commands in AGENTS.md. ✅ resolved |
 
 ---
 
 ## What's Missing
 
-### 1. Project identity
-AGENTS.md has no description of what `noSheetOnaLib` is, what language/runtime it targets,
-or what problem it solves. Agents cannot make sensible decisions without this context.
-
-**Fix**: Add a one-paragraph "Purpose" section to AGENTS.md once the project direction is
-decided.
+### 1. Project identity ✅ resolved
+AGENTS.md now describes `noSheetOnaLib` as a TypeScript computation engine library with
+Node.js 24 / npm, and documents all tooling commands.
 
 ---
 
-### 2. Language and tooling conventions
-No source files, no `package.json` / `go.mod` / `pyproject.toml`, no linter or formatter
-config. Agents will guess at conventions.
-
-**Fix**: After bootstrapping the project, document in AGENTS.md:
-- Language and runtime version
-- Package manager and install command
-- Lint command (`npm run lint`, `golangci-lint run`, `ruff check .`, etc.)
-- Test command and how to run a single test
-- Build/bundle command
+### 2. Language and tooling conventions ✅ resolved
+AGENTS.md now documents: install, build, lint, format, typecheck, test, and single-file
+test commands.
 
 ---
 
@@ -50,15 +43,8 @@ dependencies. Minimum entries depend on language:
 
 ---
 
-### 4. Dev container image
-The universal image (`mcr.microsoft.com/devcontainers/universal:4.0.1-noble`) is ~10 GB and
-starts slowly. It is appropriate for exploration but not for a production dev workflow.
-
-**Fix**: Once the project language is known, replace with a language-specific image and
-document the choice in AGENTS.md. Examples:
-- Node.js 24: `mcr.microsoft.com/devcontainers/javascript-node:24`
-- Python 3.13: `mcr.microsoft.com/devcontainers/python:3.13`
-- Go 1.24: `mcr.microsoft.com/devcontainers/go:1.24`
+### 4. Dev container image ✅ resolved
+Replaced universal image with `mcr.microsoft.com/devcontainers/javascript-node:24`.
 
 ---
 
@@ -93,21 +79,21 @@ that installs deps and runs tests is sufficient to start.
 
 ## What's Wrong
 
-| Item | Severity | Notes |
+| Item | Severity | Status |
 |---|---|---|
-| No `.gitignore` | High | Risk of committing `node_modules` or equivalent on first install. |
-| Universal dev container image | Medium | Slow startup; should be replaced once language is chosen. |
-| AGENTS.md had no content | Medium | Created during this audit with placeholder content; needs real project context. |
+| No `.gitignore` | High | ⚠️ Still open — create before running `npm install`. |
+| Universal dev container image | Medium | ✅ Resolved — switched to `javascript-node:24`. |
+| AGENTS.md had no content | Medium | ✅ Resolved — fully populated with project context and tooling. |
 
 ---
 
 ## Recommended Action Order
 
-1. Decide project language and purpose.
-2. Create `.gitignore` for that language.
-3. Replace universal dev container image with a language-specific one.
-4. Bootstrap project structure (source dir, entry point, test dir).
-5. Fill in AGENTS.md conventions section (lint, test, build commands).
+1. ✅ Decide project language and purpose.
+2. ⚠️ Create `.gitignore` for Node.js/TypeScript — **do this before `npm install`**.
+3. ✅ Replace universal dev container image with `javascript-node:24`.
+4. Bootstrap project structure (`src/`, entry point, test dir, `package.json`, `tsconfig.json`).
+5. ✅ Fill in AGENTS.md conventions section (lint, test, build commands).
 6. Add `automations.yaml` for `onStart` dependency install.
-7. Add a CI workflow.
+7. Add a CI workflow (lint + test on PR).
 8. Add `.ona/skills/` entries for recurring agent workflows.
