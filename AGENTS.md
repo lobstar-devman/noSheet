@@ -4,10 +4,27 @@ Agent guidance for the `noSheetOnaLib` repository.
 
 ## Repository Overview
 
-`noSheetOnaLib` is a TypeScript mathematical expression engine. 
-It evaluates structured typesafe mathematical expressions in syntactic order.
-It doesn't use string-based mathematical statements that need to be parsed by a parsing engine or eval'd.
-Consumers define expressions in code using the library's API.
+`noSheetOnaLib` is a TypeScript library for applying named expressions to tabular data.
+
+Consumers define expressions as composable TypeScript values using `col()`, `scalar()`, and
+operator functions (`mul`, `add`, `sub`, `div`). Expressions are bound to result column names
+via `def()`, then applied row-by-row to a table with `applyDefinitions()`. Results are
+appended as new columns. Later definitions can reference columns produced by earlier ones —
+evaluation follows declaration order.
+
+No string parsing, no `eval`. Example matching SPEC.md:
+
+```ts
+applyDefinitions(
+  { cost: [3, 7, 8], quantity: [2, 3, 4] },
+  [
+    def("net",   mul(col("cost"), col("quantity"))),  // net = cost * quantity
+    def("vat",   scalar(1.2)),                        // vat = 1.2 (constant per row)
+    def("total", mul(col("net"), col("vat"))),        // total = net * vat
+  ],
+);
+// Produces: { cost, quantity, net: [6,21,32], vat: [1.2,…], total: [7.2,25.2,38.4] }
+```
 
 ## In-Depth Specification
 
