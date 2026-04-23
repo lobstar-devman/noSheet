@@ -33,4 +33,9 @@ The Row type contains a definition for all the columns in the table defined so f
 
 The `Row` type is continuously updated with the column names that are created by expressions.
 
-The `Row` type should work with code completions. So that when a new expression is defined - that column name is available on the row type when typeing the new expression code into the IDE.
+The `Row` type should work with VSCode TypeScript code completion. So that after a new expression is defined - that column name should be available on the row type when typing the new expression code into the IDE.
+
+Expressions which use columns that have defined by expressions that have not yet had thier results calculated should not be allowed, for instance, definining the expressions below in syntactic order should not be possible:
+
+result2 = result1 + 3;
+result1 = 1 + 2;
