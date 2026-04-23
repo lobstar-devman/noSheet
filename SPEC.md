@@ -30,3 +30,7 @@ The Row type contains a definition for all the columns in the table defined so f
 ```tyepscript
 (row: Row) => row.cost * row.quantity;
 ```
+
+The `Row` type is continuously updated with the column names that are created by expressions.
+
+The `Row` type should work with code completions. So that when a new expression is defined - that column name is available on the row type when typeing the new expression code into the IDE.

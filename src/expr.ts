@@ -2,9 +2,10 @@
  * A snapshot of all columns available when an expression is evaluated.
  * Keys are column names; values are the numeric column values for the current row.
  *
- * `Row` contains all input columns plus any columns produced by earlier definitions.
- * `applyDefinitions()` guarantees every key in the row is present and numeric —
- * access columns as plain properties: `row.cost`, `row.net`, etc.
+ * `Row` is continuously updated as definitions are applied: it starts with the input
+ * table's columns and gains a new entry for each definition that has been evaluated
+ * before the current one. Later expression functions therefore have access to all
+ * columns produced by earlier definitions.
  */
 export type Row = Record<string, number>;
 
