@@ -4,10 +4,14 @@ Agent guidance for the `noSheetOnaLib` repository.
 
 ## Repository Overview
 
-`noSheetOnaLib` is a TypeScript computation engine library. It evaluates structured,
-programmatic computation graphs — not string-based mathematical expressions and not
-Excel-style row/column formula definitions. Consumers define computations in code using
-the library's API.
+`noSheetOnaLib` is a TypeScript mathematical expression engine. 
+It evaluates structured typesafe mathematical expressions in syntactic order.
+It doesn't use string-based mathematical statements that need to be parsed by a parsing engine or eval'd.
+Consumers define expressions in code using the library's API.
+
+## In-Depth Specification
+
+@SPEC.md
 
 ## Language & Runtime
 
