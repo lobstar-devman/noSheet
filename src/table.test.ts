@@ -1,4 +1,4 @@
-import { col, scalar, mul, add, sub, div } from "./expr.js";
+import type { Row } from "./expr.js";
 import { def } from "./definition.js";
 import { applyDefinitions } from "./table.js";
 
@@ -11,9 +11,9 @@ const baseTable = {
 describe("applyDefinitions — SPEC.md example", () => {
   it("computes net, vat, and total columns", () => {
     const result = applyDefinitions(baseTable, [
-      def("net", mul(col("cost"), col("quantity"))),
-      def("vat", scalar(1.2)),
-      def("total", mul(col("net"), col("vat"))),
+      def("net",   (row: Row) => row.cost     * row.quantity),
+      def("vat",   () => 1.2),
+      def("total", (row: Row) => row.net      * row.vat),
     ]);
 
     expect(result["net"]).toEqual([6, 21, 32]);
@@ -27,7 +27,7 @@ describe("applyDefinitions — SPEC.md example", () => {
 
   it("preserves the original columns", () => {
     const result = applyDefinitions(baseTable, [
-      def("net", mul(col("cost"), col("quantity"))),
+      def("net", (row: Row) => row.cost * row.quantity),
     ]);
 
     expect(result["cost"]).toEqual([3, 7, 8]);
@@ -36,8 +36,10 @@ describe("applyDefinitions — SPEC.md example", () => {
 
   it("does not mutate the input table", () => {
     const input = { cost: [3, 7, 8], quantity: [2, 3, 4] };
-    applyDefinitions(input, [def("net", mul(col("cost"), col("quantity")))]);
+    applyDefinitions(input, [def("net", (row: Row) => row.cost * row.quantity)]);
     expect(Object.keys(input)).toEqual(["cost", "quantity"]);
+    expect(input.cost).toEqual([3, 7, 8]);
+    expect(input.quantity).toEqual([2, 3, 4]);
   });
 });
 
@@ -45,27 +47,27 @@ describe("applyDefinitions — operators", () => {
   const t = { a: [10, 20], b: [2, 4] };
 
   it("add", () => {
-    const r = applyDefinitions(t, [def("r", add(col("a"), col("b")))]);
+    const r = applyDefinitions(t, [def("r", (row: Row) => row.a + row.b)]);
     expect(r["r"]).toEqual([12, 24]);
   });
 
   it("sub", () => {
-    const r = applyDefinitions(t, [def("r", sub(col("a"), col("b")))]);
+    const r = applyDefinitions(t, [def("r", (row: Row) => row.a - row.b)]);
     expect(r["r"]).toEqual([8, 16]);
   });
 
   it("mul", () => {
-    const r = applyDefinitions(t, [def("r", mul(col("a"), col("b")))]);
+    const r = applyDefinitions(t, [def("r", (row: Row) => row.a * row.b)]);
     expect(r["r"]).toEqual([20, 80]);
   });
 
   it("div", () => {
-    const r = applyDefinitions(t, [def("r", div(col("a"), col("b")))]);
+    const r = applyDefinitions(t, [def("r", (row: Row) => row.a / row.b)]);
     expect(r["r"]).toEqual([5, 5]);
   });
 
   it("scalar constant applied to every row", () => {
-    const r = applyDefinitions(t, [def("r", scalar(99))]);
+    const r = applyDefinitions(t, [def("r", () => 99)]);
     expect(r["r"]).toEqual([99, 99]);
   });
 });
@@ -74,19 +76,18 @@ describe("applyDefinitions — sequential ordering", () => {
   it("later definitions can reference earlier computed columns", () => {
     const t = { x: [2, 4] };
     const result = applyDefinitions(t, [
-      def("doubled", mul(col("x"), scalar(2))),
-      def("quadrupled", mul(col("doubled"), scalar(2))),
+      def("doubled",    (row: Row) => row.x       * 2),
+      def("quadrupled", (row: Row) => row.doubled * 2),
     ]);
     expect(result["doubled"]).toEqual([4, 8]);
     expect(result["quadrupled"]).toEqual([8, 16]);
   });
 
   it("evaluation order is declaration order, not dependency order", () => {
-    // If order were reversed this would throw (col 'a' not yet defined)
     const t = { x: [3] };
     const result = applyDefinitions(t, [
-      def("a", mul(col("x"), scalar(2))),
-      def("b", mul(col("a"), scalar(3))),
+      def("a", (row: Row) => row.x * 2),
+      def("b", (row: Row) => row.a * 3),
     ]);
     expect(result["b"]).toEqual([18]);
   });
@@ -101,30 +102,30 @@ describe("applyDefinitions — edge cases", () => {
   it("empty table with no rows produces empty result columns", () => {
     const result = applyDefinitions(
       { cost: [], quantity: [] },
-      [def("net", mul(col("cost"), col("quantity")))],
+      [def("net", (row: Row) => row.cost * row.quantity)],
     );
     expect(result["net"]).toEqual([]);
   });
 
-  it("throws when a col() reference is missing", () => {
+  it("throws when a definition name collides with an existing column", () => {
     expect(() =>
-      applyDefinitions(baseTable, [def("bad", col("nonexistent"))]),
-    ).toThrow('Column "nonexistent" not found');
+      applyDefinitions(baseTable, [def("cost", () => 0)]),
+    ).toThrow('Column "cost" already exists');
   });
 
   it("throws when table columns have unequal lengths", () => {
     expect(() =>
-      applyDefinitions({ a: [1, 2], b: [1] }, [def("r", add(col("a"), col("b")))]),
+      applyDefinitions({ a: [1, 2], b: [1] }, [def("r", (row: Row) => row.a + row.b)]),
     ).toThrow("unequal lengths");
   });
 });
 
 describe("applyDefinitions — nested expressions", () => {
-  it("evaluates deeply nested expression trees", () => {
-    // (cost + quantity) * (cost - quantity)  =>  (a+b)(a-b) = a²-b²
+  it("evaluates complex inline expressions", () => {
+    // (a + b) * (a - b) = a² - b²
     const t = { a: [5], b: [3] };
     const result = applyDefinitions(t, [
-      def("r", mul(add(col("a"), col("b")), sub(col("a"), col("b")))),
+      def("r", (row: Row) => (row.a + row.b) * (row.a - row.b)),
     ]);
     // (5+3)*(5-3) = 8*2 = 16
     expect(result["r"]).toEqual([16]);

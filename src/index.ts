@@ -1,5 +1,4 @@
-export type { Expr } from "./expr.js";
-export { col, scalar, mul, add, sub, div } from "./expr.js";
+export type { Row, ExprFn } from "./expr.js";
 
 export type { Definition } from "./definition.js";
 export { def } from "./definition.js";

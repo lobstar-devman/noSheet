@@ -22,3 +22,11 @@ The results of any expressions applied to the table are stored in the table itse
 | 3        | 2        | 6   | 7.2   |
 | 7        | 3        | 21  | 25.2  |
 | 8        | 4        | 32  | 38.4  |
+
+# Expressions
+
+Expressions are defined as arrow functions.
+The Row type contains a definition for all the columns in the table defined so far.
+```tyepscript
+(row: Row) => row.cost * row.quantity;
+```
