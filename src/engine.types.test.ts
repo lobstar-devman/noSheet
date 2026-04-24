@@ -11,8 +11,7 @@ import { Engine } from "./engine.js";
 
 // result2 references result1 before result1 is defined.
 // At the point result2 is declared, Cols = { x: number } — result1 does not exist.
-void Engine
-  .from({ x: [1] })
+void new Engine<{ x: number[] }>()
   .def("result2", (row) =>
     // @ts-expect-error: 'result1' does not exist on type '{ x: number }'
     // eslint-disable-next-line @typescript-eslint/restrict-plus-operands, @typescript-eslint/no-unsafe-return
@@ -22,8 +21,7 @@ void Engine
 
 // ── Referencing a column that never exists must be a compile-time error ───────
 
-void Engine
-  .from({ a: [1] })
+void new Engine<{ a: number[] }>()
   .def("r", (row) =>
     // @ts-expect-error: 'nonexistent' does not exist on type '{ a: number }'
     row.nonexistent * 2,
@@ -31,19 +29,17 @@ void Engine
 
 // ── Columns defined earlier ARE available (must compile without errors) ───────
 
-void Engine
-  .from({ cost: [3], quantity: [2] })
+void new Engine<{ cost: number[]; quantity: number[] }>()
   .def("net",   (row) => row.cost * row.quantity)
   .def("vat",   () => 1.2)
   .def("total", (row) => row.net * row.vat)
-  .evaluate();
+  .evaluate({ cost: [3], quantity: [2] });
 
 // ── evaluate() return type is fully typed ─────────────────────────────────────
 
-const result = Engine
-  .from({ a: [1, 2], b: [3, 4] })
+const result = new Engine<{ a: number[]; b: number[] }>()
   .def("sum", (row) => row.a + row.b)
-  .evaluate();
+  .evaluate({ a: [1, 2], b: [3, 4] });
 
 // Accessing defined columns must be typed as readonly number[].
 void (result.a satisfies readonly number[]);
@@ -54,10 +50,16 @@ void (result.sum satisfies readonly number[]);
 // @ts-expect-error: 'missing' does not exist on the result type
 void result.missing;
 
+// ── evaluate() enforces the Input type ───────────────────────────────────────
+
+const engine = new Engine<{ cost: number[]; quantity: number[] }>()
+  .def("net", (row) => row.cost * row.quantity);
+
+// Passing wrong column names must be a compile-time error.
+// @ts-expect-error: 'price' is not assignable to Input type
+void engine.evaluate({ price: [1], quantity: [2] });
+
 // Jest requires at least one test block per file.
-// The real assertions here are the @ts-expect-error directives above —
-// if the type system becomes too permissive they become unused-directive errors,
-// failing the typecheck step.
 it("compile-time type constraints are enforced (see @ts-expect-error directives above)", () => {
   expect(true).toBe(true);
 });
