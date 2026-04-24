@@ -39,3 +39,5 @@ Expressions which use columns that have defined by expressions that have not yet
 
 result2 = result1 + 3;
 result1 = 1 + 2;
+
+Operands and expression results can be numbers, strings, bigints or booleans. 

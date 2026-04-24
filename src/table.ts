@@ -1,10 +1,12 @@
+import type { CellValue } from "./expr.js";
 import type { Definition } from "./definition.js";
 
 /**
- * A table is a set of named columns, each holding one numeric value per row.
+ * A table is a set of named columns, each holding one cell value per row.
  * All columns must have the same length.
+ * Column values may be number, string, bigint, or boolean.
  */
-export type Table = Readonly<Record<string, readonly number[]>>;
+export type Table = Readonly<Record<string, readonly CellValue[]>>;
 
 /**
  * Applies an ordered list of definitions to a table, row by row, in declaration order.
@@ -12,24 +14,23 @@ export type Table = Readonly<Record<string, readonly number[]>>;
  * Each definition produces a new column appended to the table. Later definitions
  * can reference columns produced by earlier ones. The original table is not mutated.
  *
- * @throws {Error} if a definition's function references a column that does not exist.
- * @throws {Error} if the table has columns of unequal length.
  * @throws {Error} if a definition name collides with an existing column.
+ * @throws {Error} if the table has columns of unequal length.
  */
 export function applyDefinitions(table: Table, definitions: readonly Definition[]): Table {
   const rowCount = resolveRowCount(table);
-  const columns: Record<string, readonly number[]> = { ...table };
+  const columns: Record<string, readonly CellValue[]> = { ...table };
 
   for (const { name, fn } of definitions) {
     if (Object.prototype.hasOwnProperty.call(columns, name)) {
       throw new Error(`Column "${name}" already exists in the table.`);
     }
 
-    const column: number[] = [];
+    const column: CellValue[] = [];
 
     for (let i = 0; i < rowCount; i++) {
       // Build a flat row view from all columns available so far (input + previously computed).
-      const row: Record<string, number> = {};
+      const row: Record<string, CellValue> = {};
       for (const [colName, values] of Object.entries(columns)) {
         row[colName] = values[i];
       }

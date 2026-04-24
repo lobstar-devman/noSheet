@@ -15,8 +15,10 @@ export type Definition = {
  * Creates a Definition that assigns the result of `fn(row)` to a new column named `name`.
  *
  * @example
- * def("net", (row: Row) => row.cost * row.quantity)  // net = cost * quantity
- * def("vat", () => 1.2)                              // vat = 1.2 (constant)
+ * def("net",    (row: Row) => row.cost * row.quantity)  // number column
+ * def("vat",    () => 1.2)                              // number constant
+ * def("label",  (row: Row) => String(row.cost))         // string column
+ * def("active", (row: Row) => row.quantity > 2)         // boolean column
  */
 export function def(name: string, fn: ExprFn): Definition {
   return { name, fn };

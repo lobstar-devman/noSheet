@@ -32,6 +32,48 @@ describe("Engine — SPEC.md example", () => {
   });
 });
 
+describe("Engine — non-number column types", () => {
+  it("string column — typed as readonly string[]", () => {
+    const result = new Engine<BaseInput>()
+      .def("label", (row) => String(row.cost))
+      .evaluate(baseTable);
+    expect(result.label).toEqual(["3", "7", "8"]);
+    void (result.label satisfies readonly string[]);
+  });
+
+  it("boolean column — typed as readonly boolean[]", () => {
+    const result = new Engine<BaseInput>()
+      .def("active", (row) => row.quantity > 2)
+      .evaluate(baseTable);
+    expect(result.active).toEqual([false, true, true]);
+    void (result.active satisfies readonly boolean[]);
+  });
+
+  it("bigint column — typed as readonly bigint[]", () => {
+    const result = new Engine<BaseInput>()
+      .def("bigCost", (row) => BigInt(row.cost))
+      .evaluate(baseTable);
+    expect(result.bigCost).toEqual([3n, 7n, 8n]);
+    void (result.bigCost satisfies readonly bigint[]);
+  });
+
+  it("mixed types in chain — each column retains its inferred type", () => {
+    const result = new Engine<BaseInput>()
+      .def("net",    (row) => row.cost * row.quantity)   // number
+      .def("label",  (row) => String(row.net))           // string
+      .def("active", (row) => row.quantity > 2)          // boolean
+      .evaluate(baseTable);
+
+    void (result.net    satisfies readonly number[]);
+    void (result.label  satisfies readonly string[]);
+    void (result.active satisfies readonly boolean[]);
+
+    expect(result.net).toEqual([6, 21, 32]);
+    expect(result.label).toEqual(["6", "21", "32"]);
+    expect(result.active).toEqual([false, true, true]);
+  });
+});
+
 describe("Engine — does not mutate input", () => {
   it("does not mutate the input table object", () => {
     const input = { cost: [3, 7, 8], quantity: [2, 3, 4] };
@@ -90,11 +132,71 @@ describe("Engine — operators", () => {
   });
 
   it("complex inline expression", () => {
-    // (a + b) * (a - b) = a² - b²  =>  (5+3)*(5-3) = 16
     const result = new Engine<{ a: number[]; b: number[] }>()
       .def("r", (row) => (row.a + row.b) * (row.a - row.b))
       .evaluate({ a: [5], b: [3] });
     expect(result.r).toEqual([16]);
+  });
+});
+
+describe("Engine — non-number input columns", () => {
+  it("string input column — available in expressions and preserved in output", () => {
+    const result = new Engine<{ name: string[]; score: number[] }>()
+      .def("greeting", (row) => `Hello, ${row.name}!`)
+      .def("passed",   (row) => row.score >= 50)
+      .evaluate({ name: ["Alice", "Bob"], score: [72, 45] });
+
+    void (result.name     satisfies readonly string[]);
+    void (result.greeting satisfies readonly string[]);
+    void (result.passed   satisfies readonly boolean[]);
+
+    expect(result.name).toEqual(["Alice", "Bob"]);
+    expect(result.greeting).toEqual(["Hello, Alice!", "Hello, Bob!"]);
+    expect(result.passed).toEqual([true, false]);
+  });
+
+  it("boolean input column — used as operand in expressions", () => {
+    const result = new Engine<{ active: boolean[]; value: number[] }>()
+      .def("effective", (row) => row.active ? row.value : 0)
+      .evaluate({ active: [true, false, true], value: [10, 20, 30] });
+
+    void (result.effective satisfies readonly number[]);
+    expect(result.effective).toEqual([10, 0, 30]);
+  });
+
+  it("bigint input column — used in bigint arithmetic", () => {
+    const result = new Engine<{ price: bigint[]; qty: bigint[] }>()
+      .def("total", (row) => row.price * row.qty)
+      .evaluate({ price: [100n, 200n, 300n], qty: [2n, 3n, 4n] });
+
+    void (result.total satisfies readonly bigint[]);
+    expect(result.total).toEqual([200n, 600n, 1200n]);
+  });
+
+  it("mixed input types — string, number, boolean, bigint columns together", () => {
+    const result = new Engine<{
+      label: string[];
+      amount: number[];
+      taxed: boolean[];
+      id: bigint[];
+    }>()
+      .def("net",     (row) => row.taxed ? row.amount * 1.2 : row.amount)
+      .def("summary", (row) => `${row.label}:${String(row.net)}`)
+      .def("ref",     (row) => row.id * 10n)
+      .evaluate({
+        label:  ["a", "b", "c"],
+        amount: [100, 200, 300],
+        taxed:  [true, false, true],
+        id:     [1n, 2n, 3n],
+      });
+
+    void (result.net     satisfies readonly number[]);
+    void (result.summary satisfies readonly string[]);
+    void (result.ref     satisfies readonly bigint[]);
+
+    expect(result.net).toEqual([120, 200, 360]);
+    expect(result.summary).toEqual(["a:120", "b:200", "c:360"]);
+    expect(result.ref).toEqual([10n, 20n, 30n]);
   });
 });
 

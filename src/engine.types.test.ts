@@ -9,8 +9,6 @@ import { Engine } from "./engine.js";
 
 // ── Forward reference must be a compile-time error ────────────────────────────
 
-// result2 references result1 before result1 is defined.
-// At the point result2 is declared, Cols = { x: number } — result1 does not exist.
 void new Engine<{ x: number[] }>()
   .def("result2", (row) =>
     // @ts-expect-error: 'result1' does not exist on type '{ x: number }'
@@ -35,16 +33,19 @@ void new Engine<{ cost: number[]; quantity: number[] }>()
   .def("total", (row) => row.net * row.vat)
   .evaluate({ cost: [3], quantity: [2] });
 
-// ── evaluate() return type is fully typed ─────────────────────────────────────
+// ── evaluate() return type preserves per-column value types ──────────────────
 
 const result = new Engine<{ a: number[]; b: number[] }>()
-  .def("sum", (row) => row.a + row.b)
+  .def("sum",    (row) => row.a + row.b)
+  .def("label",  (row) => String(row.sum))
+  .def("active", (row) => row.a > 0)
   .evaluate({ a: [1, 2], b: [3, 4] });
 
-// Accessing defined columns must be typed as readonly number[].
-void (result.a satisfies readonly number[]);
-void (result.b satisfies readonly number[]);
-void (result.sum satisfies readonly number[]);
+void (result.a      satisfies readonly number[]);
+void (result.b      satisfies readonly number[]);
+void (result.sum    satisfies readonly number[]);
+void (result.label  satisfies readonly string[]);
+void (result.active satisfies readonly boolean[]);
 
 // Accessing a column that was never defined must be a compile-time error.
 // @ts-expect-error: 'missing' does not exist on the result type
@@ -55,7 +56,6 @@ void result.missing;
 const engine = new Engine<{ cost: number[]; quantity: number[] }>()
   .def("net", (row) => row.cost * row.quantity);
 
-// Passing wrong column names must be a compile-time error.
 // @ts-expect-error: 'price' is not assignable to Input type
 void engine.evaluate({ price: [1], quantity: [2] });
 
