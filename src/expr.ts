@@ -15,12 +15,37 @@ export type CellValue = number | string | bigint | boolean;
 export type Row = Record<string, CellValue>;
 
 /**
- * An expression function. Receives a row snapshot and returns a CellValue.
+ * An expression function. Receives a row snapshot and the current aggregate results,
+ * and returns a CellValue.
  *
  * @example
- * (row: Row) => row.cost * row.quantity          // number
- * () => 1.2                                      // number constant
- * (row: Row) => row.quantity > 2                 // boolean
- * (row: Row) => String(row.cost)                 // string
+ * (row, aggs) => row.cost * row.quantity         // number, no aggs used
+ * (row, aggs) => row.x / aggs.total              // references a scalar aggregate
+ * (row, aggs) => aggs.rank[aggs.rank.indexOf(row.x)]  // references a per-row aggregate
  */
-export type ExprFn = (row: Row) => CellValue;
+export type ExprFn = (row: Row, aggs: Record<string, CellValue | CellValue[]>) => CellValue;
+
+/**
+ * A scalar aggregate function. Receives all input columns as arrays and previously
+ * computed aggregates, and returns a single CellValue.
+ *
+ * @example
+ * (cols, aggs) => cols.x.reduce((a, b) => (a as number) + (b as number), 0)
+ * (cols, aggs) => (aggs.total as number) / cols.x.length
+ */
+export type AggFn = (
+  cols: Record<string, CellValue[]>,
+  aggs: Record<string, CellValue | CellValue[]>,
+) => CellValue;
+
+/**
+ * A per-row aggregate function. Receives all input columns as arrays and previously
+ * computed aggregates, and returns a CellValue array with one value per row.
+ *
+ * @example
+ * (cols, aggs) => cols.x.map((v, i) => (v as number) / (aggs.total as number))
+ */
+export type AggRowFn = (
+  cols: Record<string, CellValue[]>,
+  aggs: Record<string, CellValue | CellValue[]>,
+) => CellValue[];

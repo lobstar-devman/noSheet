@@ -34,7 +34,7 @@ export function applyDefinitions(table: Table, definitions: readonly Definition[
       for (const [colName, values] of Object.entries(columns)) {
         row[colName] = values[i];
       }
-      column.push(fn(row));
+      column.push(fn(row, {}));
     }
 
     columns[name] = column;

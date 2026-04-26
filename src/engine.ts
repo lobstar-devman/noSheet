@@ -1,12 +1,11 @@
-import type { CellValue } from "./expr.js";
-import { def } from "./definition.js";
+import type { CellValue, AggFn, AggRowFn } from "./expr.js";
 
 /**
  * Converts a table type (column arrays) to a row type (scalar values).
  *
  * @example
- * TableToRow<{ cost: number[]; label: string[]; active: boolean[] }>
- * // => { cost: number; label: string; active: boolean }
+ * TableToRow<{ cost: number[]; label: string[] }>
+ * // => { cost: number; label: string }
  */
 export type TableToRow<T extends Record<string, CellValue[]>> = {
   [K in keyof T]: T[K] extends readonly (infer V extends CellValue)[]
@@ -16,79 +15,147 @@ export type TableToRow<T extends Record<string, CellValue[]>> = {
       : CellValue;
 };
 
+// ── Internal step discriminated union ─────────────────────────────────────────
+
+type DefStep = {
+  kind: "def";
+  name: string;
+  fn: (row: Record<string, CellValue>, aggs: Record<string, CellValue | CellValue[]>) => CellValue;
+};
+
+type AggStep = {
+  kind: "agg";
+  name: string;
+  fn: AggFn;
+};
+
+type AggRowStep = {
+  kind: "aggRow";
+  name: string;
+  fn: AggRowFn;
+};
+
+type Step = DefStep | AggStep | AggRowStep;
+
+// ── Engine ────────────────────────────────────────────────────────────────────
+
 /**
- * A typed computation engine that applies sequential expression definitions to tabular data.
+ * A typed computation engine that applies sequential row expressions and aggregate
+ * expressions to tabular data.
  *
- * The input schema is declared as a type parameter on construction. Expression functions
- * receive a `Row` typed to the input columns plus any columns produced by earlier definitions,
- * enabling IDE autocomplete and compile-time enforcement that expressions only reference
- * columns that have already been defined.
+ * Three kinds of step can be chained in any order:
  *
- * Data is supplied as a mutable 2D row-oriented array at evaluation time. `evaluate()`
- * appends computed values to each row in-place and returns void.
+ * - `.def(name, (row, aggs) => value)` — row expression. Evaluated once per row.
+ *   `row` is typed to all input columns + previously defined row columns.
+ *   `aggs` is typed to all previously computed aggregates.
+ *   Result is appended to each row and added to `headers`.
  *
- * @typeParam Input - The input table type. Determines which column names and value types
- *                   are available in expression functions from the start of the chain.
- * @typeParam Cols  - The accumulated row type. Starts as TableToRow<Input> and grows
- *                   with each `.def()` call.
+ * - `.agg(name, (cols, aggs) => scalar)` — scalar aggregate. Evaluated once across
+ *   all rows. `cols` contains the full input column arrays. Result is a single
+ *   CellValue stored in `aggs`; it does NOT appear in the output rows.
+ *
+ * - `.aggRow(name, (cols, aggs) => array)` — per-row aggregate. Evaluated once across
+ *   all rows, returning one value per row. Result is stored in `aggs` as a CellValue[];
+ *   it does NOT appear in the output rows. Row expressions access it via `aggs.name[i]`.
+ *
+ * @typeParam Input - The input table type.
+ * @typeParam Cols  - Accumulated row type (grows with each `.def()` call).
+ * @typeParam Aggs  - Accumulated aggregate type (grows with each `.agg()` / `.aggRow()` call).
  *
  * @example
- * const engine = new Engine<{ cost: number[]; quantity: number[] }>()
- *   .def("net",   (row) => row.cost * row.quantity)
- *   .def("vat",   () => 1.2)
- *   .def("total", (row) => row.net * row.vat);
- *
- * const headers = ["cost", "quantity"];
- * const rows: CellValue[][] = [[3, 2], [7, 3], [8, 4]];
- * engine.evaluate(headers, rows);
- * // headers => ["cost", "quantity", "net", "vat", "total"]
- * // rows    => [[3,2,6,1.2,7.2], [7,3,21,1.2,25.2], [8,4,32,1.2,38.4]]
+ * const engine = new Engine<{ x: number[] }>()
+ *   .agg("total",  (cols) => cols.x.reduce((a, b) => (a as number) + (b as number), 0))
+ *   .aggRow("pct", (cols, aggs) => cols.x.map((v) => (v as number) / (aggs.total as number)))
+ *   .def("share",  (row, aggs) => (aggs.pct as number[])[???])  // see evaluate() for rowIndex
+ *   .def("doubled", (row) => row.x * 2);
  */
 export class Engine<
   Input extends Record<string, CellValue[]>,
   Cols extends Record<string, CellValue> = TableToRow<Input>,
+  Aggs extends Record<string, CellValue | CellValue[]> = Record<never, never>,
 > {
-  readonly #definitions: ReturnType<typeof def>[];
+  readonly #steps: Step[];
 
-  constructor(definitions: ReturnType<typeof def>[] = []) {
-    this.#definitions = definitions;
+  constructor(steps: Step[] = []) {
+    this.#steps = steps;
   }
 
   /**
-   * Adds a named expression to the engine.
+   * Adds a row expression. Evaluated once per row during `evaluate()`.
    *
-   * The expression function receives a `Row` typed to all columns available so far
-   * (input columns + previously defined columns). The return type `V` is inferred from
-   * the function and added to `Cols`, making the new column available to subsequent calls.
-   *
-   * @param name - The result column name. Must not already exist in the headers.
-   * @param fn   - Arrow function that computes the column value for each row.
+   * @param name - Result column name. Appended to `headers` and each row.
+   * @param fn   - Receives the current row (typed to `Cols`) and all computed aggregates
+   *               (typed to `Aggs`). Returns the value for this row.
    */
   def<Name extends string, V extends CellValue>(
     name: Name,
-    fn: (row: Cols) => V,
-  ): Engine<Input, Cols & Record<Name, V>> {
-    return new Engine<Input, Cols & Record<Name, V>>([
-      ...this.#definitions,
-      // Double cast via unknown: function parameter contravariance prevents a direct cast
-      // from (row: Cols) => V to (row: Record<string, CellValue>) => CellValue.
-      // Safe because Cols is structurally Record<string, CellValue> at runtime.
-      def(name, fn as unknown as (row: Record<string, CellValue>) => CellValue),
-    ]);
+    fn: (row: Cols, aggs: Aggs) => V,
+  ): Engine<Input, Cols & Record<Name, V>, Aggs> {
+    const step: DefStep = {
+      kind: "def",
+      name,
+      fn: fn as unknown as DefStep["fn"],
+    };
+    return new Engine<Input, Cols & Record<Name, V>, Aggs>([...this.#steps, step]);
   }
 
   /**
-   * Evaluates all definitions against the supplied rows, mutating them in-place.
+   * Adds a scalar aggregate. Evaluated once across all rows before any subsequent step.
    *
-   * For each definition, the computed value is pushed onto every row and the definition's
-   * name is pushed onto `headers`. Definitions are applied in declaration order; later
-   * definitions can reference columns added by earlier ones.
+   * @param name - Aggregate name. Available as `aggs.name` in subsequent `.def()`,
+   *               `.agg()`, and `.aggRow()` calls. Not added to `headers` or rows.
+   * @param fn   - Receives all column arrays available so far (input columns + columns
+   *               produced by earlier `.def()` steps) and previously computed aggregates.
+   *               Returns a single CellValue.
+   */
+  agg<Name extends string, V extends CellValue>(
+    name: Name,
+    fn: (cols: Input & { [K in keyof Cols]: CellValue[] }, aggs: Aggs) => V,
+  ): Engine<Input, Cols, Aggs & Record<Name, V>> {
+    const step: AggStep = {
+      kind: "agg",
+      name,
+      fn: fn as unknown as AggFn,
+    };
+    return new Engine<Input, Cols, Aggs & Record<Name, V>>([...this.#steps, step]);
+  }
+
+  /**
+   * Adds a per-row aggregate. Evaluated once across all rows before any subsequent step.
    *
-   * @param headers - Mutable array of column names, one per position in each row.
-   *                  Definition names are appended here as new columns are computed.
-   * @param rows    - Mutable 2D array of row data. Each inner array must have the same
-   *                  length as `headers` on entry. Computed values are pushed onto each row.
-   * @throws {Error} if a definition name already exists in `headers`.
+   * @param name - Aggregate name. Available as `aggs.name` in subsequent `.def()`,
+   *               `.agg()`, and `.aggRow()` calls. `aggs.name` is a `V[]` array;
+   *               row expressions access the current row's value via `aggs.name[rowIndex]`.
+   * @param fn   - Receives all column arrays available so far (input columns + columns
+   *               produced by earlier `.def()` steps) and previously computed aggregates.
+   *               Returns a `V[]` with one value per row.
+   */
+  aggRow<Name extends string, V extends CellValue>(
+    name: Name,
+    fn: (cols: Input & { [K in keyof Cols]: CellValue[] }, aggs: Aggs) => V[],
+  ): Engine<Input, Cols, Aggs & Record<Name, V[]>> {
+    const step: AggRowStep = {
+      kind: "aggRow",
+      name,
+      fn: fn as unknown as AggRowFn,
+    };
+    return new Engine<Input, Cols, Aggs & Record<Name, V[]>>([...this.#steps, step]);
+  }
+
+  /**
+   * Evaluates all steps against the supplied rows, mutating them in-place.
+   *
+   * Steps are executed in declaration order. Aggregate steps run once across all rows
+   * and store their result in an internal `aggs` map. Row expression steps run once
+   * per row, pushing the computed value onto each row and appending the name to `headers`.
+   *
+   * Row expressions receive `(row, aggs, rowIndex)` at runtime, where `rowIndex` is the
+   * 0-based index of the current row — useful for indexing into per-row aggregate arrays.
+   *
+   * @param headers - Mutable column name array. Row expression names are appended here.
+   * @param rows    - Mutable 2D row array. Each inner array must match `headers.length`
+   *                  on entry. Row expression values are pushed onto each row.
+   * @throws {Error} if a def name already exists in `headers`.
    * @throws {Error} if any row length does not match `headers` length on entry.
    */
   evaluate(headers: string[], rows: CellValue[][]): void {
@@ -100,22 +167,38 @@ export class Engine<
       }
     }
 
-    for (const { name, fn } of this.#definitions) {
-      if (headers.includes(name)) {
-        throw new Error(`Column "${name}" already exists in headers.`);
+    // Build the initial column map from headers + rows (column-oriented view).
+    // This is rebuilt lazily as needed for aggregate steps.
+    const buildCols = (): Record<string, CellValue[]> => {
+      const cols: Record<string, CellValue[]> = {};
+      for (let c = 0; c < headers.length; c++) {
+        cols[headers[c]] = rows.map((row) => row[c]);
       }
+      return cols;
+    };
 
-      for (const row of rows) {
-        // Build a row snapshot from the current headers and row values.
-        const snapshot: Record<string, CellValue> = {};
-        for (let i = 0; i < headers.length; i++) {
-          // headers and row are guaranteed equal length by the pre-check above.
-          snapshot[headers[i]] = row[i];
+    const aggs: Record<string, CellValue | CellValue[]> = {};
+
+    for (const step of this.#steps) {
+      if (step.kind === "agg") {
+        aggs[step.name] = step.fn(buildCols(), aggs);
+      } else if (step.kind === "aggRow") {
+        aggs[step.name] = step.fn(buildCols(), aggs);
+      } else {
+        // def
+        if (headers.includes(step.name)) {
+          throw new Error(`Column "${step.name}" already exists in headers.`);
         }
-        row.push(fn(snapshot));
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const snapshot: Record<string, CellValue> = {};
+          for (let c = 0; c < headers.length; c++) {
+            snapshot[headers[c]] = row[c];
+          }
+          row.push(step.fn(snapshot, aggs));
+        }
+        headers.push(step.name);
       }
-
-      headers.push(name);
     }
   }
 }
