@@ -1,6 +1,5 @@
 import type { CellValue } from "./expr.js";
 import { def } from "./definition.js";
-import { applyDefinitions } from "./table.js";
 
 /**
  * Converts a table type (column arrays) to a row type (scalar values).
@@ -18,18 +17,6 @@ export type TableToRow<T extends Record<string, CellValue[]>> = {
 };
 
 /**
- * Converts an accumulated row type back to a table type (column arrays).
- * This is the return type of `Engine.evaluate()`.
- *
- * @example
- * RowToTable<{ cost: number; label: string; active: boolean }>
- * // => { readonly cost: readonly number[]; readonly label: readonly string[]; readonly active: readonly boolean[] }
- */
-export type RowToTable<Cols extends Record<string, CellValue>> = {
-  readonly [K in keyof Cols]: readonly Cols[K][];
-};
-
-/**
  * A typed computation engine that applies sequential expression definitions to tabular data.
  *
  * The input schema is declared as a type parameter on construction. Expression functions
@@ -37,8 +24,8 @@ export type RowToTable<Cols extends Record<string, CellValue>> = {
  * enabling IDE autocomplete and compile-time enforcement that expressions only reference
  * columns that have already been defined.
  *
- * Data is supplied at evaluation time via `evaluate(table)`, so the same engine instance
- * can be reused with different datasets.
+ * Data is supplied as a mutable 2D row-oriented array at evaluation time. `evaluate()`
+ * appends computed values to each row in-place and returns void.
  *
  * @typeParam Input - The input table type. Determines which column names and value types
  *                   are available in expression functions from the start of the chain.
@@ -47,16 +34,15 @@ export type RowToTable<Cols extends Record<string, CellValue>> = {
  *
  * @example
  * const engine = new Engine<{ cost: number[]; quantity: number[] }>()
- *   .def("net",    (row) => row.cost * row.quantity)
- *   .def("vat",    () => 1.2)
- *   .def("total",  (row) => row.net * row.vat)
- *   .def("label",  (row) => String(row.net))
- *   .def("active", (row) => row.quantity > 2);
+ *   .def("net",   (row) => row.cost * row.quantity)
+ *   .def("vat",   () => 1.2)
+ *   .def("total", (row) => row.net * row.vat);
  *
- * const result = engine.evaluate({ cost: [3, 7, 8], quantity: [2, 3, 4] });
- * // result.net    => [6, 21, 32]          (number[])
- * // result.label  => ["6", "21", "32"]    (string[])
- * // result.active => [false, true, true]  (boolean[])
+ * const headers = ["cost", "quantity"];
+ * const rows: CellValue[][] = [[3, 2], [7, 3], [8, 4]];
+ * engine.evaluate(headers, rows);
+ * // headers => ["cost", "quantity", "net", "vat", "total"]
+ * // rows    => [[3,2,6,1.2,7.2], [7,3,21,1.2,25.2], [8,4,32,1.2,38.4]]
  */
 export class Engine<
   Input extends Record<string, CellValue[]>,
@@ -75,7 +61,7 @@ export class Engine<
    * (input columns + previously defined columns). The return type `V` is inferred from
    * the function and added to `Cols`, making the new column available to subsequent calls.
    *
-   * @param name - The result column name. Must not already exist in the input table.
+   * @param name - The result column name. Must not already exist in the headers.
    * @param fn   - Arrow function that computes the column value for each row.
    */
   def<Name extends string, V extends CellValue>(
@@ -92,21 +78,44 @@ export class Engine<
   }
 
   /**
-   * Evaluates all definitions against the supplied table, row by row, in declaration order.
+   * Evaluates all definitions against the supplied rows, mutating them in-place.
    *
-   * The table must conform to the `Input` type declared on the engine. The return type
-   * is fully typed to all columns in `Cols`, preserving per-column value types.
+   * For each definition, the computed value is pushed onto every row and the definition's
+   * name is pushed onto `headers`. Definitions are applied in declaration order; later
+   * definitions can reference columns added by earlier ones.
    *
-   * @param table - The input data. Each column must be an array of equal length.
-   * @throws {Error} if a definition name collides with an existing column.
-   * @throws {Error} if the table has columns of unequal length.
+   * @param headers - Mutable array of column names, one per position in each row.
+   *                  Definition names are appended here as new columns are computed.
+   * @param rows    - Mutable 2D array of row data. Each inner array must have the same
+   *                  length as `headers` on entry. Computed values are pushed onto each row.
+   * @throws {Error} if a definition name already exists in `headers`.
+   * @throws {Error} if any row length does not match `headers` length on entry.
    */
-  evaluate(table: Input): RowToTable<Cols> {
-    // Defensive copy so the engine does not mutate the caller's data.
-    const copy: Record<string, CellValue[]> = {};
-    for (const [k, v] of Object.entries(table)) {
-      copy[k] = [...v];
+  evaluate(headers: string[], rows: CellValue[][]): void {
+    for (const row of rows) {
+      if (row.length !== headers.length) {
+        throw new Error(
+          `Row length ${String(row.length)} does not match headers length ${String(headers.length)}.`,
+        );
+      }
     }
-    return applyDefinitions(copy, this.#definitions) as RowToTable<Cols>;
+
+    for (const { name, fn } of this.#definitions) {
+      if (headers.includes(name)) {
+        throw new Error(`Column "${name}" already exists in headers.`);
+      }
+
+      for (const row of rows) {
+        // Build a row snapshot from the current headers and row values.
+        const snapshot: Record<string, CellValue> = {};
+        for (let i = 0; i < headers.length; i++) {
+          // headers and row are guaranteed equal length by the pre-check above.
+          snapshot[headers[i]] = row[i];
+        }
+        row.push(fn(snapshot));
+      }
+
+      headers.push(name);
+    }
   }
 }

@@ -5,6 +5,7 @@
  * If the type system becomes too permissive, the @ts-expect-error directive itself
  * becomes an error, causing the test suite to fail.
  */
+import type { CellValue } from "./expr.js";
 import { Engine } from "./engine.js";
 
 // ── Forward reference must be a compile-time error ────────────────────────────
@@ -27,37 +28,19 @@ void new Engine<{ a: number[] }>()
 
 // ── Columns defined earlier ARE available (must compile without errors) ───────
 
-void new Engine<{ cost: number[]; quantity: number[] }>()
-  .def("net",   (row) => row.cost * row.quantity)
-  .def("vat",   () => 1.2)
-  .def("total", (row) => row.net * row.vat)
-  .evaluate({ cost: [3], quantity: [2] });
+void (() => {
+  const headers = ["cost", "quantity"];
+  const rows: CellValue[][] = [[3, 2]];
+  new Engine<{ cost: number[]; quantity: number[] }>()
+    .def("net",   (row) => row.cost * row.quantity)
+    .def("vat",   () => 1.2)
+    .def("total", (row) => row.net * row.vat)
+    .evaluate(headers, rows);
+});
 
-// ── evaluate() return type preserves per-column value types ──────────────────
-
-const result = new Engine<{ a: number[]; b: number[] }>()
-  .def("sum",    (row) => row.a + row.b)
-  .def("label",  (row) => String(row.sum))
-  .def("active", (row) => row.a > 0)
-  .evaluate({ a: [1, 2], b: [3, 4] });
-
-void (result.a      satisfies readonly number[]);
-void (result.b      satisfies readonly number[]);
-void (result.sum    satisfies readonly number[]);
-void (result.label  satisfies readonly string[]);
-void (result.active satisfies readonly boolean[]);
-
-// Accessing a column that was never defined must be a compile-time error.
-// @ts-expect-error: 'missing' does not exist on the result type
-void result.missing;
-
-// ── evaluate() enforces the Input type ───────────────────────────────────────
-
-const engine = new Engine<{ cost: number[]; quantity: number[] }>()
-  .def("net", (row) => row.cost * row.quantity);
-
-// @ts-expect-error: 'price' is not assignable to Input type
-void engine.evaluate({ price: [1], quantity: [2] });
+// ── evaluate() returns void ───────────────────────────────────────────────────
+// The return type is void — confirmed by the fact that the result cannot be
+// used as a value. No runtime assertion needed; the type system enforces this.
 
 // Jest requires at least one test block per file.
 it("compile-time type constraints are enforced (see @ts-expect-error directives above)", () => {

@@ -1,5 +1,5 @@
 export { Engine } from "./engine.js";
-export type { TableToRow, RowToTable } from "./engine.js";
+export type { TableToRow } from "./engine.js";
 
 // Row and ExprFn remain public for consumers who use applyDefinitions directly.
 export type { Row, ExprFn } from "./expr.js";
