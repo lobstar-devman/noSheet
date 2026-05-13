@@ -9,7 +9,7 @@
     "noImplicitOverride": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true,
+    //"sourceMap": true, Removed to prevent rollup erroring: https://github.com/rollup/plugins/issues/576
     "outDir": "dist",
     "rootDir": "src",
     "esModuleInterop": true,
