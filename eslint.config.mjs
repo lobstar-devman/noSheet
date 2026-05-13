@@ -15,6 +15,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["dist/", "coverage/", "jest.config.ts", "eslint.config.mjs"],
+    ignores: ["dist/", "coverage/", "jest.config.ts", "eslint.config.mjs", "rollup.config.js"],
   },
 );
