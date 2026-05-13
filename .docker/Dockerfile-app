@@ -51,6 +51,7 @@ RUN echo "Running image-mode-baked step"
 
 # The repo to clone is defined in the local .env/compose.yaml file
 RUN --mount=type=secret,required=true,id=github_ssh,target=/etc/ssh/id_rsa_github \
+	ssh-add /etc/ssh/id_rsa_github \
     git config --global --add safe.directory /workspace/app  && \
     git clone --no-checkout $APP_REPO /workspace/app
 
