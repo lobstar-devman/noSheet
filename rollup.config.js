@@ -1,6 +1,15 @@
+//https://medium.com/@robinviktorsson/setting-up-a-modern-typescript-project-with-rollup-no-framework-e24a7564394c
+
 import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import typescript from '@rollup/plugin-typescript';
+
+import postcss from 'rollup-plugin-postcss';         // Allows importing and bundling CSS (and preprocessors like SCSS)
+import serve from 'rollup-plugin-serve';             // Starts a local dev server
+import livereload from 'rollup-plugin-livereload';   // Enables live-reloading in the browser on changes
+import url from '@rollup/plugin-url';                // Handles importing image and other binary files
+import terser from '@rollup/plugin-terser';          // Handles minification to make the bundle smaller
+
 import pkg from './package.json' with { type: "json" };
 
 // Check if we're in development mode (watch mode or explicitly set build mode)
@@ -39,20 +48,12 @@ export default [
 			{ file: pkg.module, format: 'es', sourcemap: true }
 		]
 	},
-
-	// unit testing tagcloud in a browser-friendly UMD build
-	/*
-	{
-		input: 'src/tagcloud.ts',
-		output: {
-			name: 'tagCloud',
-			file: pkg.tagcloud,
-			format: 'es',
-			sourcemap: true
-		},
-		plugins: [
-			typescript() // so Rollup can convert TypeScript to JavaScript
-		]
-	},
-	*/
+    ...(isDev ? [                      // Development-only plugins (enabled when in dev mode)
+      serve({
+        open: true,                    // Automatically open the browser when the server starts
+        contentBase: ['dist', 'examples'],  // Folders to serve static files from
+        port: 8181                     // Port to run the dev server on
+      }),
+      livereload(['dist', 'examples']) // Watch the 'dist' and 'examples' directories and reload browser on changes
+    ] : [])	
 ];
