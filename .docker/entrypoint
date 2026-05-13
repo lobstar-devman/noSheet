@@ -1,0 +1,83 @@
+#!/bin/bash
+set -e
+
+ENTRYPOINT=
+EP_ARGS=()
+
+#extract entrypoint
+if { [ $# -ge 2 ] && [ $1 = "--entrypoint" ]; }; then
+   ENTRYPOINT=$2
+   shift
+   shift
+
+   # extract everything after the --
+   # the former is passed to the entry point
+   # the latter to the build/boot scripts
+   for var in "$@"
+   do
+      if [ "$var" = "--" ]; then
+         shift
+         break
+      fi
+      EP_ARGS+=("$var")      
+      shift
+   done
+
+   echo "* Extracted entrypoint: "$ENTRYPOINT "${EP_ARGS[@]}"
+   echo "* The following arguments will be passed to any build/boot scripts: $@"
+fi
+
+# GitHub user
+if { [ ! -z "${GITHUB_USERNAME}" ] && [ ! -z "${GITHUB_EMAIL}" ]; }; then
+
+   echo "🗄️GitHub user setup..."
+   git config --global user.name ${GITHUB_USERNAME}
+   git config --global user.email ${GITHUB_EMAIL}
+fi
+
+# Check for .gitignore
+if { [ ! -z "${APP_REPO}" ] && [ ! -f "$REPO_ROOT/.gitignore" ]; }; then
+   
+   git config --global --add safe.directory $REPO_ROOT
+
+   # checkout the repo / branch set in the .env file
+   BRANCH="${APP_BRANCH:-main}"
+
+   echo "Performing a checkout of branch $BRANCH"
+   (cd $REPO_ROOT && git fetch origin && git checkout $BRANCH && git pull)
+
+   # Run repo build script
+   if [ -f "$REPO_ROOT/.docker/build.sh" ]; then   
+
+      echo "🏭 Starting build process: $REPO_ROOT/.docker/build.sh"
+
+      #make scripts executable
+      chmod 754 $REPO_ROOT/.docker/*.sh
+
+      #run script
+      $REPO_ROOT/.docker/build.sh "$@"
+
+      echo "✅ Build process completed"
+   fi
+else
+   echo "⏭️ $REPO_ROOT/.gitignore not found. Skipping repo setup ..."   
+fi
+
+#run boot script
+if [ -f "$REPO_ROOT/.docker/boot.sh" ]; then
+
+   #make scripts executable
+   chmod 754 $REPO_ROOT/.docker/*.sh
+
+   echo "🚀 Starting bootstrap: $REPO_ROOT/.docker/boot.sh $@"
+   $REPO_ROOT/.docker/boot.sh "$@"
+   echo "✅ Boot process completed"
+fi   
+
+# forward to underlying image entrypoint
+if [ ! -z "${ENTRYPOINT}" ]; then
+   echo "* Running entrypoint: "$ENTRYPOINT "${EP_ARGS[@]}"
+   $ENTRYPOINT "${EP_ARGS[@]}"
+fi
+
+echo "⚠️ entrypoint exited, there must be a problem somewhere..."

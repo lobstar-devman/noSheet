@@ -1,0 +1,49 @@
+#https://docs.docker.com/compose/how-tos/environment-variables/envvars/
+name: ${CONTAINER_NAME}
+
+services:
+    app:
+        build:
+            dockerfile: Dockerfile-app
+            target: final-dev-image
+            args:
+              #Note: To reference a value from the local .env file use: ${ENVVAR}     
+              USER: ${USER}       
+              APP_REPO: ${APP_REPO}
+              IMAGE_MODE: ${IMAGE_MODE}
+
+            ##
+            # https://docs.docker.com/build/building/secrets/
+            ##
+            #secrets:
+            #    # Note that support for uid, gid, and mode attributes are not implemented in Docker Compose when 
+            #    # the source of the secret is a file. This is because bind-mounts used under the hood don't allow uid remapping.            
+            secrets:
+                - github_ssh
+
+        #ports:
+        #    - "8080:8080"
+        #    - "9000:9000"
+
+        environment:
+            #used in /entrypoint
+            - GITHUB_USERNAME
+            - GITHUB_EMAIL
+            - APP_REPO
+            - APP_BRANCH        
+
+        secrets:
+            # Github ssh key
+            - source: github_ssh
+              target: /etc/ssh/id_rsa_github
+
+        # Override docker-php-entrypoint in /usr/local/bin/docker-php-entrypoint
+        entrypoint: /entrypoint --entrypoint docker-entrypoint.sh
+        command: sleep infinity
+
+secrets:            
+    github_ssh:
+        file: 
+            ${GITHUB_SSH}
+
+#TODO: https://docs.docker.com/compose/how-tos/use-secrets/        
