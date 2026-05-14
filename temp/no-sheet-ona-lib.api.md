@@ -12,18 +12,26 @@ export type AggFn = (cols: Record<string, CellValue[]>, aggs: Record<string, Cel
 // @public
 export type AggRowFn = (cols: Record<string, CellValue[]>, aggs: Record<string, CellValue | CellValue[]>) => CellValue[];
 
+// Warning: (ae-incompatible-release-tags) The symbol "applyDefinitions" is marked as @public, but its signature references "Definition" which is marked as @internal
+//
 // @public
 export function applyDefinitions(table: Table, definitions: readonly Definition[]): Table;
 
-// @public
+// Warning: (ae-internal-missing-underscore) The name "def" should be prefixed with an underscore because the declaration is marked as @internal
+//
+// @internal
 export function def(name: string, fn: ExprFn): Definition;
 
-// @public
+// Warning: (ae-internal-missing-underscore) The name "Definition" should be prefixed with an underscore because the declaration is marked as @internal
+//
+// @internal
 export type Definition = {
     readonly name: string;
     readonly fn: ExprFn;
 };
 
+// Warning: (ae-incompatible-release-tags) The symbol "Engine" is marked as @public, but its signature references "TableToRow" which is marked as @internal
+//
 // @public
 export class Engine<Input extends Record<string, CellValue[]>, Cols extends Record<string, CellValue> = TableToRow<Input>, Aggs extends Record<string, CellValue | CellValue[]> = Record<never, never>> {
     // Warning: (ae-forgotten-export) The symbol "Step" needs to be exported by the entry point index.d.ts
@@ -47,7 +55,9 @@ export type Row = Record<string, CellValue>;
 // @public
 export type Table = Readonly<Record<string, readonly CellValue[]>>;
 
-// @public
+// Warning: (ae-internal-missing-underscore) The name "TableToRow" should be prefixed with an underscore because the declaration is marked as @internal
+//
+// @internal
 export type TableToRow<T extends Record<string, CellValue[]>> = {
     [K in keyof T]: T[K] extends readonly (infer V extends CellValue)[] ? V : T[K] extends (infer V extends CellValue)[] ? V : CellValue;
 };

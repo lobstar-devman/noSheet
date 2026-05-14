@@ -5,7 +5,9 @@ import type { CellValue, AggFn, AggRowFn } from "./expr.js";
  *
  * @example
  * TableToRow<{ cost: number[]; label: string[] }>
- * // => { cost: number; label: string }
+ * // =\> { cost: number; label: string }
+ * 
+ * @internal
  */
 export type TableToRow<T extends Record<string, CellValue[]>> = {
   [K in keyof T]: T[K] extends readonly (infer V extends CellValue)[]
