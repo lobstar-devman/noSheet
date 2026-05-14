@@ -20,7 +20,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "clean": "rm -rf dist",
-    "build": "rollup -c",
+    "api-extractor": "api-extractor run --local --verbose",
+    "build": "rollup -c && api-extractor run --local --verbose",
     "dev:watch": "rollup -c -w"
   },
   "keywords": [

@@ -1,0 +1,4 @@
+//vscode workspace settings
+{
+    "files.associations": { "*.json": "jsonc" }
+}
