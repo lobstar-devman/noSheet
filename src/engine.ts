@@ -4,8 +4,10 @@ import type { CellValue, AggFn, AggRowFn } from "./expr.js";
  * Converts a table type (column arrays) to a row type (scalar values).
  *
  * @example
+ * ``` javascript
  * TableToRow<{ cost: number[]; label: string[] }>
- * // =\> { cost: number; label: string }
+ * // => { cost: number; label: string }
+ * ```
  * 
  * @internal
  */
@@ -65,11 +67,13 @@ type Step = DefStep | AggStep | AggRowStep;
  * @typeParam Aggs  - Accumulated aggregate type (grows with each `.agg()` / `.aggRow()` call).
  *
  * @example
+ * ``` javascript
  * const engine = new Engine<{ x: number[] }>()
  *   .agg("total",  (cols) => cols.x.reduce((a, b) => (a as number) + (b as number), 0))
  *   .aggRow("pct", (cols, aggs) => cols.x.map((v) => (v as number) / (aggs.total as number)))
  *   .def("share",  (row, aggs) => (aggs.pct as number[])[???])  // see evaluate() for rowIndex
  *   .def("doubled", (row) => row.x * 2);
+ * ```
  */
 export class Engine<
   Input extends Record<string, CellValue[]>,
