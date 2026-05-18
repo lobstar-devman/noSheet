@@ -265,21 +265,4 @@ export class Engine<
       }
     }
   }
-
-  /**
-   * Evaluates all steps against the supplied row objects, mutating them in-place.
-   *
-   * Each object is expected to contain keys for all input columns. New computed
-   * properties are assigned directly onto the original objects.
-   *
-   * @param rows    - Mutable object rows. Each object must contain input column keys.
-   * @returns       - column name array. Row expression names are appended here
-   * @throws `{Error}` if a def name already exists in `headers`.
-   */
-  evaluateMap(rows: Array<Record<string, CellValue>>): string[] {
-    const headers = Object.keys(rows[0]);
-    this.evaluate(headers, rows);
-
-    return headers;
-  }
 }
