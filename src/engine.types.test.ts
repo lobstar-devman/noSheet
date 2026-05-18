@@ -11,20 +11,23 @@ import { Engine } from "./engine.js";
 // ── Forward reference must be a compile-time error ────────────────────────────
 
 void new Engine<{ x: number[] }>()
-  .def("result2", (row) =>
-    // @ts-expect-error: 'result1' does not exist on type '{ x: number }'
-    // eslint-disable-next-line @typescript-eslint/restrict-plus-operands, @typescript-eslint/no-unsafe-return
-    row.result1 + 3,
+  .def(
+    "result2",
+    (row) =>
+      // @ts-expect-error: 'result1' does not exist on type '{ x: number }'
+      // eslint-disable-next-line @typescript-eslint/restrict-plus-operands, @typescript-eslint/no-unsafe-return
+      row.result1 + 3,
   )
   .def("result1", () => 1 + 2);
 
 // ── Referencing a column that never exists must be a compile-time error ───────
 
-void new Engine<{ a: number[] }>()
-  .def("r", (row) =>
+void new Engine<{ a: number[] }>().def(
+  "r",
+  (row) =>
     // @ts-expect-error: 'nonexistent' does not exist on type '{ a: number }'
     row.nonexistent * 2,
-  );
+);
 
 // ── Columns defined earlier ARE available (must compile without errors) ───────
 
@@ -32,8 +35,8 @@ void (() => {
   const headers = ["cost", "quantity"];
   const rows: CellValue[][] = [[3, 2]];
   new Engine<{ cost: number[]; quantity: number[] }>()
-    .def("net",   (row) => row.cost * row.quantity)
-    .def("vat",   () => 1.2)
+    .def("net", (row) => row.cost * row.quantity)
+    .def("vat", () => 1.2)
     .def("total", (row) => row.net * row.vat)
     .evaluate(headers, rows);
 });

@@ -1,12 +1,10 @@
-import {describe, expect, it, test} from '@jest/globals';
+import { describe, expect, it, test } from "@jest/globals";
 
 import type { CellValue } from "./expr.js";
 import { Engine } from "./engine.js";
 
 // Helper: build headers + rows from a column-keyed object for test readability.
-function toRows(
-  data: Record<string, CellValue[]>,
-): { headers: string[]; rows: CellValue[][] } {
+function toRows(data: Record<string, CellValue[]>): { headers: string[]; rows: CellValue[][] } {
   const headers = Object.keys(data);
   const rowCount = headers.length > 0 ? data[headers[0]].length : 0;
   const rows: CellValue[][] = Array.from({ length: rowCount }, (_, i) =>
@@ -24,8 +22,8 @@ function col(headers: string[], rows: CellValue[][], name: string): CellValue[] 
 
 describe("Engine — SPEC.md example", () => {
   const engine = new Engine<{ cost: number[]; quantity: number[] }>()
-    .def("net",   (row) => row.cost * row.quantity)
-    .def("vat",   () => 1.2)
+    .def("net", (row) => row.cost * row.quantity)
+    .def("vat", () => 1.2)
     .def("total", (row) => row.net * row.vat);
 
   it("appends computed columns to each row", () => {
@@ -64,22 +62,26 @@ describe("Engine — SPEC.md example", () => {
 
 describe("Engine — mutation", () => {
   it("mutates the rows array in-place", () => {
-    const rows: CellValue[][] = [[3, 2], [7, 3]];
+    const rows: CellValue[][] = [
+      [3, 2],
+      [7, 3],
+    ];
     const headers = ["cost", "quantity"];
     new Engine<{ cost: number[]; quantity: number[] }>()
       .def("net", (row) => row.cost * row.quantity)
       .evaluate(headers, rows);
 
-    expect(rows).toEqual([[3, 2, 6], [7, 3, 21]]);
+    expect(rows).toEqual([
+      [3, 2, 6],
+      [7, 3, 21],
+    ]);
     expect(headers).toEqual(["cost", "quantity", "net"]);
   });
 
   it("mutates the headers array in-place", () => {
     const headers = ["x"];
     const rows: CellValue[][] = [[5]];
-    new Engine<{ x: number[] }>()
-      .def("doubled", (row) => row.x * 2)
-      .evaluate(headers, rows);
+    new Engine<{ x: number[] }>().def("doubled", (row) => row.x * 2).evaluate(headers, rows);
     expect(headers).toEqual(["x", "doubled"]);
   });
 });
@@ -87,10 +89,13 @@ describe("Engine — mutation", () => {
 describe("Engine — non-number input columns", () => {
   it("string input column", () => {
     const headers = ["name", "score"];
-    const rows: CellValue[][] = [["Alice", 72], ["Bob", 45]];
+    const rows: CellValue[][] = [
+      ["Alice", 72],
+      ["Bob", 45],
+    ];
     new Engine<{ name: string[]; score: number[] }>()
       .def("greeting", (row) => `Hello, ${row.name}!`)
-      .def("passed",   (row) => row.score >= 50)
+      .def("passed", (row) => row.score >= 50)
       .evaluate(headers, rows);
 
     expect(col(headers, rows, "greeting")).toEqual(["Hello, Alice!", "Hello, Bob!"]);
@@ -99,9 +104,13 @@ describe("Engine — non-number input columns", () => {
 
   it("boolean input column", () => {
     const headers = ["active", "value"];
-    const rows: CellValue[][] = [[true, 10], [false, 20], [true, 30]];
+    const rows: CellValue[][] = [
+      [true, 10],
+      [false, 20],
+      [true, 30],
+    ];
     new Engine<{ active: boolean[]; value: number[] }>()
-      .def("effective", (row) => row.active ? row.value : 0)
+      .def("effective", (row) => (row.active ? row.value : 0))
       .evaluate(headers, rows);
 
     expect(col(headers, rows, "effective")).toEqual([10, 0, 30]);
@@ -109,7 +118,11 @@ describe("Engine — non-number input columns", () => {
 
   it("bigint input column", () => {
     const headers = ["price", "qty"];
-    const rows: CellValue[][] = [[100n, 2n], [200n, 3n], [300n, 4n]];
+    const rows: CellValue[][] = [
+      [100n, 2n],
+      [200n, 3n],
+      [300n, 4n],
+    ];
     new Engine<{ price: bigint[]; qty: bigint[] }>()
       .def("total", (row) => row.price * row.qty)
       .evaluate(headers, rows);
@@ -120,14 +133,14 @@ describe("Engine — non-number input columns", () => {
   it("mixed input types — string, number, boolean, bigint", () => {
     const headers = ["label", "amount", "taxed", "id"];
     const rows: CellValue[][] = [
-      ["a", 100, true,  1n],
+      ["a", 100, true, 1n],
       ["b", 200, false, 2n],
-      ["c", 300, true,  3n],
+      ["c", 300, true, 3n],
     ];
     new Engine<{ label: string[]; amount: number[]; taxed: boolean[]; id: bigint[] }>()
-      .def("net",     (row) => row.taxed ? row.amount * 1.2 : row.amount)
+      .def("net", (row) => (row.taxed ? row.amount * 1.2 : row.amount))
       .def("summary", (row) => `${row.label}:${String(row.net)}`)
-      .def("ref",     (row) => row.id * 10n)
+      .def("ref", (row) => row.id * 10n)
       .evaluate(headers, rows);
 
     expect(col(headers, rows, "net")).toEqual([120, 200, 360]);
@@ -141,7 +154,7 @@ describe("Engine — sequential ordering", () => {
     const headers = ["x"];
     const rows: CellValue[][] = [[2], [4]];
     new Engine<{ x: number[] }>()
-      .def("doubled",    (row) => row.x * 2)
+      .def("doubled", (row) => row.x * 2)
       .def("quadrupled", (row) => row.doubled * 2)
       .evaluate(headers, rows);
 
@@ -155,16 +168,29 @@ describe("Engine — operators", () => {
 
   function run(fn: (row: { a: number; b: number }) => CellValue): CellValue[] {
     const headers = ["a", "b"];
-    const rows: CellValue[][] = [[10, 2], [20, 4]];
+    const rows: CellValue[][] = [
+      [10, 2],
+      [20, 4],
+    ];
     new Engine<AB>().def("r", fn).evaluate(headers, rows);
     return col(headers, rows, "r");
   }
 
-  it("add", () => { expect(run((row) => row.a + row.b)).toEqual([12, 24]); });
-  it("sub", () => { expect(run((row) => row.a - row.b)).toEqual([8, 16]); });
-  it("mul", () => { expect(run((row) => row.a * row.b)).toEqual([20, 80]); });
-  it("div", () => { expect(run((row) => row.a / row.b)).toEqual([5, 5]); });
-  it("scalar constant", () => { expect(run(() => 99)).toEqual([99, 99]); });
+  it("add", () => {
+    expect(run((row) => row.a + row.b)).toEqual([12, 24]);
+  });
+  it("sub", () => {
+    expect(run((row) => row.a - row.b)).toEqual([8, 16]);
+  });
+  it("mul", () => {
+    expect(run((row) => row.a * row.b)).toEqual([20, 80]);
+  });
+  it("div", () => {
+    expect(run((row) => row.a / row.b)).toEqual([5, 5]);
+  });
+  it("scalar constant", () => {
+    expect(run(() => 99)).toEqual([99, 99]);
+  });
 
   it("complex inline expression", () => {
     const headers = ["a", "b"];
@@ -179,11 +205,17 @@ describe("Engine — operators", () => {
 describe("Engine — edge cases", () => {
   it("no definitions leaves headers and rows unchanged", () => {
     const headers = ["cost", "quantity"];
-    const rows: CellValue[][] = [[3, 2], [7, 3]];
+    const rows: CellValue[][] = [
+      [3, 2],
+      [7, 3],
+    ];
     const engine = new Engine<{ cost: number[]; quantity: number[] }>();
     engine.evaluate(headers, rows);
     expect(headers).toEqual(["cost", "quantity"]);
-    expect(rows).toEqual([[3, 2], [7, 3]]);
+    expect(rows).toEqual([
+      [3, 2],
+      [7, 3],
+    ]);
   });
 
   it("empty rows array produces no mutations beyond headers", () => {
@@ -261,5 +293,5 @@ describe("Engine.evaluateMap with object rows", () => {
       { cost: 7, qty: 3, net: 21, total: 22 },
       { cost: 8, qty: 4, net: 32, total: 33 },
     ]);
-  });  
+  });
 });

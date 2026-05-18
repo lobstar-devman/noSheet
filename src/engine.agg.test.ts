@@ -18,7 +18,7 @@ describe("Engine.agg — scalar aggregate", () => {
 
     new Engine<{ x: number[] }>()
       .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
-      .def("share", (row, aggs) => row.x / (aggs.total))
+      .def("share", (row, aggs) => row.x / aggs.total)
       .evaluate(headers, rows);
 
     // total = 18; shares = 3/18, 7/18, 8/18
@@ -46,8 +46,8 @@ describe("Engine.agg — scalar aggregate", () => {
 
     new Engine<{ x: number[] }>()
       .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
-      .agg("mean",  (_cols, aggs) => (aggs.total) / 3)
-      .def("aboveMean", (row, aggs) => row.x > (aggs.mean))
+      .agg("mean", (_cols, aggs) => aggs.total / 3)
+      .def("aboveMean", (row, aggs) => row.x > aggs.mean)
       .evaluate(headers, rows);
 
     // total=12, mean=4; above mean: false, false, true
@@ -61,7 +61,7 @@ describe("Engine.agg — scalar aggregate", () => {
     new Engine<{ x: number[] }>()
       .def("doubled", (row) => row.x * 2)
       .agg("sumDoubled", (cols) => (cols.doubled as number[]).reduce((a, b) => a + b, 0))
-      .def("share", (row, aggs) => row.doubled / (aggs.sumDoubled))
+      .def("share", (row, aggs) => row.doubled / aggs.sumDoubled)
       .evaluate(headers, rows);
 
     // doubled=[4,8,12], sumDoubled=24
@@ -85,7 +85,7 @@ describe("Engine.aggRow — per-row aggregate", () => {
         const sorted = [...cols.score].sort((a, b) => b - a);
         return cols.score.map((s) => sorted.indexOf(s) + 1);
       })
-      .def("rankLabel", (_row, aggs) => `#${String((aggs.rank)[i++])}`)
+      .def("rankLabel", (_row, aggs) => `#${String(aggs.rank[i++])}`)
       .evaluate(headers, rows);
 
     expect(col(headers, rows, "rankLabel")).toEqual(["#1", "#3", "#2"]);
@@ -110,10 +110,8 @@ describe("Engine.aggRow — per-row aggregate", () => {
 
     new Engine<{ x: number[] }>()
       .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
-      .aggRow("pct", (cols, aggs) =>
-        cols.x.map((v) => Math.round(v / (aggs.total) * 100)),
-      )
-      .def("pctRounded", (_row, aggs) => (aggs.pct)[i++])
+      .aggRow("pct", (cols, aggs) => cols.x.map((v) => Math.round((v / aggs.total) * 100)))
+      .def("pctRounded", (_row, aggs) => aggs.pct[i++])
       .evaluate(headers, rows);
 
     // total=18; pct=[17, 39, 44]
@@ -128,20 +126,22 @@ describe("Engine.def with aggs parameter", () => {
     const headers = ["x"];
     const rows: CellValue[][] = [[2], [4]];
 
-    new Engine<{ x: number[] }>()
-      .def("doubled", (row) => row.x * 2)
-      .evaluate(headers, rows);
+    new Engine<{ x: number[] }>().def("doubled", (row) => row.x * 2).evaluate(headers, rows);
 
     expect(col(headers, rows, "doubled")).toEqual([4, 8]);
   });
 
   it("row expression uses scalar aggregate", () => {
     const headers = ["price", "qty"];
-    const rows: CellValue[][] = [[10, 2], [20, 3], [30, 1]];
+    const rows: CellValue[][] = [
+      [10, 2],
+      [20, 3],
+      [30, 1],
+    ];
 
     new Engine<{ price: number[]; qty: number[] }>()
       .agg("maxQty", (cols) => Math.max(...cols.qty))
-      .def("isTopQty", (row, aggs) => row.qty === (aggs.maxQty))
+      .def("isTopQty", (row, aggs) => row.qty === aggs.maxQty)
       .evaluate(headers, rows);
 
     expect(col(headers, rows, "isTopQty")).toEqual([false, true, false]);
@@ -156,10 +156,10 @@ describe("Engine — mixed def / agg / aggRow chains", () => {
     const rows: CellValue[][] = [[1], [2], [3], [4]];
 
     new Engine<{ x: number[] }>()
-      .def("squared",   (row) => row.x ** 2)
-      .agg("sumSq",     (cols) => (cols.squared as number[]).reduce((a, b) => a + b, 0))
-      .agg("meanSq",    (_cols, aggs) => (aggs.sumSq) / 4)
-      .def("deviation", (row, aggs) => row.squared - (aggs.meanSq))
+      .def("squared", (row) => row.x ** 2)
+      .agg("sumSq", (cols) => (cols.squared as number[]).reduce((a, b) => a + b, 0))
+      .agg("meanSq", (_cols, aggs) => aggs.sumSq / 4)
+      .def("deviation", (row, aggs) => row.squared - aggs.meanSq)
       .evaluate(headers, rows);
 
     // squared=[1,4,9,16], sumSq=30, meanSq=7.5

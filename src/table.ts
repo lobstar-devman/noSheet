@@ -5,7 +5,7 @@ import type { Definition } from "./definition.js";
  * A table is a set of named columns, each holding one cell value per row.
  * All columns must have the same length.
  * Column values may be number, string, bigint, or boolean.
- * 
+ *
  * @beta
  */
 export type Table = Readonly<Record<string, readonly CellValue[]>>;
@@ -18,7 +18,7 @@ export type Table = Readonly<Record<string, readonly CellValue[]>>;
  *
  * @throws `{Error}` if a definition name collides with an existing column.
  * @throws `{Error}` if the table has columns of unequal length.
- * 
+ *
  * @beta
  */
 export function applyDefinitions(table: Table, definitions: readonly Definition[]): Table {
