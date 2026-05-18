@@ -20,7 +20,7 @@ export default [
 	{
 		input: 'src/index.ts',
 		output: {
-			name: 'noSheet',
+			name: 'no-sheet',
 			file: pkg.browser,
 			format: 'umd'
 		},

@@ -5,8 +5,8 @@
   "types": "dist/index.d.ts",
   "main": "dist/index.js",
   "type": "module",
-  "module": "dist/noSheet.esm.js",
-  "browser": "dist/noSheet.umd.js",
+  "module": "dist/no-sheet.esm.js",
+  "browser": "dist/no-sheet.umd.js",
   "files": [
     "dist"
   ],
@@ -21,6 +21,7 @@
     "test:coverage": "jest --coverage",
     "clean": "rm -rf dist",
     "api-extractor": "api-extractor run --local --verbose",
+    "rollup" : "rollup -c",
     "build": "rollup -c && api-extractor run --local --verbose",
     "dev:watch": "rollup -c -w"
   },
