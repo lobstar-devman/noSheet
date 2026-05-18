@@ -191,7 +191,7 @@
         {
           "kind": "TypeAlias",
           "canonicalReference": "no-sheet-ona-lib!AggFn:type",
-          "docComment": "/**\n * A scalar aggregate function. Receives all input columns as arrays and previously computed aggregates, and returns a single CellValue.\n *\n * @example\n *\n * (cols, aggs) => cols.x.reduce((a, b) => (a as number) + (b as number), 0) (cols, aggs) => (aggs.total as number) / cols.x.length\n */\n",
+          "docComment": "/**\n * A scalar aggregate function. Receives all input columns as arrays and previously computed aggregates, and returns a single CellValue.\n *\n * @example\n * ```javascript\n * (cols, aggs) => cols.x.reduce((a, b) => (a as number) + (b as number), 0)\n * (cols, aggs) => (aggs.total as number) / cols.x.length\n * ```\n *\n * @beta\n */\n",
           "excerptTokens": [
             {
               "kind": "Content",
@@ -257,7 +257,7 @@
             }
           ],
           "fileUrlPath": "src/expr.ts",
-          "releaseTag": "Public",
+          "releaseTag": "Beta",
           "name": "AggFn",
           "typeTokenRange": {
             "startIndex": 1,
@@ -267,7 +267,7 @@
         {
           "kind": "TypeAlias",
           "canonicalReference": "no-sheet-ona-lib!AggRowFn:type",
-          "docComment": "/**\n * A per-row aggregate function. Receives all input columns as arrays and previously computed aggregates, and returns a CellValue array with one value per row.\n *\n * @example\n *\n * (cols, aggs) => cols.x.map((v, i) => (v as number) / (aggs.total as number))\n */\n",
+          "docComment": "/**\n * A per-row aggregate function. Receives all input columns as arrays and previously computed aggregates, and returns a CellValue array with one value per row.\n *\n * @example\n * ```javascript\n * (cols, aggs) => cols.x.map((v, i) => (v as number) / (aggs.total as number))\n * ```\n *\n * @beta\n */\n",
           "excerptTokens": [
             {
               "kind": "Content",
@@ -337,7 +337,7 @@
             }
           ],
           "fileUrlPath": "src/expr.ts",
-          "releaseTag": "Public",
+          "releaseTag": "Beta",
           "name": "AggRowFn",
           "typeTokenRange": {
             "startIndex": 1,
@@ -347,7 +347,7 @@
         {
           "kind": "Function",
           "canonicalReference": "no-sheet-ona-lib!applyDefinitions:function(1)",
-          "docComment": "/**\n * Applies an ordered list of definitions to a table, row by row, in declaration order.\n *\n * Each definition produces a new column appended to the table. Later definitions can reference columns produced by earlier ones. The original table is not mutated.\n *\n * @throws\n *\n * {Error} if a definition name collides with an existing column.\n *\n * @throws\n *\n * {Error} if the table has columns of unequal length.\n */\n",
+          "docComment": "/**\n * Applies an ordered list of definitions to a table, row by row, in declaration order.\n *\n * Each definition produces a new column appended to the table. Later definitions can reference columns produced by earlier ones. The original table is not mutated.\n *\n * @throws\n *\n * `{Error}` if a definition name collides with an existing column.\n *\n * @throws\n *\n * `{Error}` if the table has columns of unequal length.\n *\n * @beta\n */\n",
           "excerptTokens": [
             {
               "kind": "Content",
@@ -394,7 +394,7 @@
             "startIndex": 7,
             "endIndex": 8
           },
-          "releaseTag": "Public",
+          "releaseTag": "Beta",
           "overloadIndex": 1,
           "parameters": [
             {
@@ -417,9 +417,107 @@
           "name": "applyDefinitions"
         },
         {
+          "kind": "Function",
+          "canonicalReference": "no-sheet-ona-lib!def:function(1)",
+          "docComment": "/**\n * Creates a Definition that assigns the result of `fn(row)` to a new column named `name`.\n *\n * @example\n * ```javascript\n * def(\"net\",    (row: Row) => row.cost * row.quantity)  // number column\n * def(\"vat\",    () => 1.2)                              // number constant\n * def(\"label\",  (row: Row) => String(row.cost))         // string column\n * def(\"active\", (row: Row) => row.quantity > 2)         // boolean column\n * ```\n *\n * @beta\n */\n",
+          "excerptTokens": [
+            {
+              "kind": "Content",
+              "text": "export declare function def(name: "
+            },
+            {
+              "kind": "Content",
+              "text": "string"
+            },
+            {
+              "kind": "Content",
+              "text": ", fn: "
+            },
+            {
+              "kind": "Reference",
+              "text": "ExprFn",
+              "canonicalReference": "no-sheet-ona-lib!ExprFn:type"
+            },
+            {
+              "kind": "Content",
+              "text": "): "
+            },
+            {
+              "kind": "Reference",
+              "text": "Definition",
+              "canonicalReference": "no-sheet-ona-lib!Definition:type"
+            },
+            {
+              "kind": "Content",
+              "text": ";"
+            }
+          ],
+          "fileUrlPath": "src/definition.ts",
+          "returnTypeTokenRange": {
+            "startIndex": 5,
+            "endIndex": 6
+          },
+          "releaseTag": "Beta",
+          "overloadIndex": 1,
+          "parameters": [
+            {
+              "parameterName": "name",
+              "parameterTypeTokenRange": {
+                "startIndex": 1,
+                "endIndex": 2
+              },
+              "isOptional": false
+            },
+            {
+              "parameterName": "fn",
+              "parameterTypeTokenRange": {
+                "startIndex": 3,
+                "endIndex": 4
+              },
+              "isOptional": false
+            }
+          ],
+          "name": "def"
+        },
+        {
+          "kind": "TypeAlias",
+          "canonicalReference": "no-sheet-ona-lib!Definition:type",
+          "docComment": "/**\n * Binds a result column name to an expression function.\n *\n * Corresponds to a statement like `net = cost * quantity` in the spec. The name becomes a new column in the table after evaluation.\n *\n * @beta\n */\n",
+          "excerptTokens": [
+            {
+              "kind": "Content",
+              "text": "export type Definition = "
+            },
+            {
+              "kind": "Content",
+              "text": "{\n    readonly name: string;\n    readonly fn: "
+            },
+            {
+              "kind": "Reference",
+              "text": "ExprFn",
+              "canonicalReference": "no-sheet-ona-lib!ExprFn:type"
+            },
+            {
+              "kind": "Content",
+              "text": ";\n}"
+            },
+            {
+              "kind": "Content",
+              "text": ";"
+            }
+          ],
+          "fileUrlPath": "src/definition.ts",
+          "releaseTag": "Beta",
+          "name": "Definition",
+          "typeTokenRange": {
+            "startIndex": 1,
+            "endIndex": 4
+          }
+        },
+        {
           "kind": "Class",
           "canonicalReference": "no-sheet-ona-lib!Engine:class",
-          "docComment": "/**\n * A typed computation engine that applies sequential row expressions and aggregate expressions to tabular data.\n *\n * Three kinds of step can be chained in any order:\n *\n * - `.def(name, (row, aggs) => value)` — row expression. Evaluated once per row. `row` is typed to all input columns + previously defined row columns. `aggs` is typed to all previously computed aggregates. Result is appended to each row and added to `headers`.\n *\n * - `.agg(name, (cols, aggs) => scalar)` — scalar aggregate. Evaluated once across all rows. `cols` contains the full input column arrays. Result is a single CellValue stored in `aggs`; it does NOT appear in the output rows.\n *\n * - `.aggRow(name, (cols, aggs) => array)` — per-row aggregate. Evaluated once across all rows, returning one value per row. Result is stored in `aggs` as a CellValue[]; it does NOT appear in the output rows. Row expressions access it via `aggs.name[i]`.\n *\n * @typeParam Input - The input table type.\n *\n * @typeParam Cols - Accumulated row type (grows with each `.def()` call).\n *\n * @typeParam Aggs - Accumulated aggregate type (grows with each `.agg()` / `.aggRow()` call).\n *\n * @example\n * ```javascript\n * const engine = new Engine<{ x: number[] }>()\n *   .agg(\"total\",  (cols) => cols.x.reduce((a, b) => (a as number) + (b as number), 0))\n *   .aggRow(\"pct\", (cols, aggs) => cols.x.map((v) => (v as number) / (aggs.total as number)))\n *   .def(\"share\",  (row, aggs) => (aggs.pct as number[])[???])  // see evaluate() for rowIndex\n *   .def(\"doubled\", (row) => row.x * 2);\n * ```\n *\n */\n",
+          "docComment": "/**\n * A typed computation engine that applies sequential row expressions and aggregate expressions to tabular data.\n *\n * Three kinds of step can be chained in any order:\n *\n * - `.def(name, (row, aggs) => value)` — row expression. Evaluated once per row. `row` is typed to all input columns + previously defined row columns. `aggs` is typed to all previously computed aggregates. Result is appended to each row and added to `headers`.\n *\n * - `.agg(name, (cols, aggs) => scalar)` — scalar aggregate. Evaluated once across all rows. `cols` contains the full input column arrays. Result is a single CellValue stored in `aggs`; it does NOT appear in the output rows.\n *\n * - `.aggRow(name, (cols, aggs) => array)` — per-row aggregate. Evaluated once across all rows, returning one value per row. Result is stored in `aggs` as a CellValue[]; it does NOT appear in the output rows. Row expressions access it via `aggs.name[i]`.\n *\n * @typeParam Input - The input table type.\n *\n * @typeParam Cols - Accumulated row type (grows with each `.def()` call).\n *\n * @typeParam Aggs - Accumulated aggregate type (grows with each `.agg()` / `.aggRow()` call).\n *\n * @example\n * ```javascript\n * const engine = new Engine<{ x: number[] }>()\n *   .agg(\"total\",  (cols) => cols.x.reduce((a, b) => (a as number) + (b as number), 0))\n *   .aggRow(\"pct\", (cols, aggs) => cols.x.map((v) => (v as number) / (aggs.total as number)))\n *   .def(\"share\",  (row, aggs) => (aggs.pct as number[])[???])  // see evaluate() for rowIndex\n *   .def(\"doubled\", (row) => row.x * 2);\n * ```\n *\n * @beta\n */\n",
           "excerptTokens": [
             {
               "kind": "Content",
@@ -528,7 +626,7 @@
             }
           ],
           "fileUrlPath": "src/engine.ts",
-          "releaseTag": "Public",
+          "releaseTag": "Beta",
           "typeParameters": [
             {
               "typeParameterName": "Input",
@@ -591,7 +689,7 @@
                   "text": ");"
                 }
               ],
-              "releaseTag": "Public",
+              "releaseTag": "Beta",
               "isProtected": false,
               "overloadIndex": 1,
               "parameters": [
@@ -708,7 +806,7 @@
                 "startIndex": 11,
                 "endIndex": 15
               },
-              "releaseTag": "Public",
+              "releaseTag": "Beta",
               "isProtected": false,
               "overloadIndex": 1,
               "parameters": [
@@ -836,7 +934,7 @@
                 "startIndex": 11,
                 "endIndex": 15
               },
-              "releaseTag": "Public",
+              "releaseTag": "Beta",
               "isProtected": false,
               "overloadIndex": 1,
               "parameters": [
@@ -955,7 +1053,7 @@
                 "startIndex": 9,
                 "endIndex": 13
               },
-              "releaseTag": "Public",
+              "releaseTag": "Beta",
               "isProtected": false,
               "overloadIndex": 1,
               "parameters": [
@@ -983,7 +1081,7 @@
             {
               "kind": "Method",
               "canonicalReference": "no-sheet-ona-lib!Engine#evaluate:member(1)",
-              "docComment": "/**\n * Evaluates all steps against the supplied rows, mutating them in-place.\n *\n * Steps are executed in declaration order. Aggregate steps run once across all rows and store their result in an internal `aggs` map. Row expression steps run once per row, pushing the computed value onto each row and appending the name to `headers`.\n *\n * Row expressions receive `(row, aggs, rowIndex)` at runtime, where `rowIndex` is the 0-based index of the current row — useful for indexing into per-row aggregate arrays.\n *\n * @param headers - Mutable column name array. Row expression names are appended here.\n *\n * @param rows - Mutable 2D row array. Each inner array must match `headers.length` on entry. Row expression values are pushed onto each row.\n *\n * @throws\n *\n * {Error} if a def name already exists in `headers`.\n *\n * @throws\n *\n * {Error} if any row length does not match `headers` length on entry.\n */\n",
+              "docComment": "/**\n * Evaluates all steps against the supplied rows, mutating them in-place.\n *\n * Steps are executed in declaration order. Aggregate steps run once across all rows and store their result in an internal `aggs` map. Row expression steps run once per row, pushing the computed value onto each row and appending the name to `headers`.\n *\n * Row expressions receive `(row, aggs, rowIndex)` at runtime, where `rowIndex` is the 0-based index of the current row — useful for indexing into per-row aggregate arrays.\n *\n * @param headers - Mutable column name array. Row expression names are appended here.\n *\n * @param rows - Mutable 2D row array. Each inner array must match `headers.length` on entry. Row expression values are pushed onto each row.\n *\n * @throws\n *\n * `{Error}` if a def name already exists in `headers`.\n *\n * @throws\n *\n * `{Error}` if any row length does not match `headers` length on entry.\n */\n",
               "excerptTokens": [
                 {
                   "kind": "Content",
@@ -1024,7 +1122,7 @@
                 "startIndex": 6,
                 "endIndex": 7
               },
-              "releaseTag": "Public",
+              "releaseTag": "Beta",
               "isProtected": false,
               "overloadIndex": 1,
               "parameters": [
@@ -1052,7 +1150,7 @@
             {
               "kind": "Method",
               "canonicalReference": "no-sheet-ona-lib!Engine#evaluate:member(2)",
-              "docComment": "/**\n * Evaluates all steps against the supplied row objects, mutating them in-place.\n *\n * Each object is expected to contain keys for all input columns. New computed properties are assigned directly onto the original objects.\n *\n * @param headers - Mutable column name array. Row expression names are appended here.\n *\n * @param rows - Mutable object rows. Each object must contain input column keys.\n *\n * @throws\n *\n * {Error} if a def name already exists in `headers`.\n */\n",
+              "docComment": "/**\n * Evaluates all steps against the supplied row objects, mutating them in-place.\n *\n * Each object is expected to contain keys for all input columns. New computed properties are assigned directly onto the original objects.\n *\n * @param headers - Mutable column name array. Row expression names are appended here.\n *\n * @param rows - Mutable object rows. Each object must contain input column keys.\n *\n * @throws\n *\n * `{Error}` if a def name already exists in `headers`.\n */\n",
               "excerptTokens": [
                 {
                   "kind": "Content",
@@ -1111,7 +1209,7 @@
                 "startIndex": 10,
                 "endIndex": 11
               },
-              "releaseTag": "Public",
+              "releaseTag": "Beta",
               "isProtected": false,
               "overloadIndex": 2,
               "parameters": [
@@ -1142,7 +1240,7 @@
         {
           "kind": "TypeAlias",
           "canonicalReference": "no-sheet-ona-lib!ExprFn:type",
-          "docComment": "/**\n * An expression function. Receives a row snapshot and the current aggregate results, and returns a CellValue.\n *\n * @example\n *\n * (row, aggs) => row.cost * row.quantity // number, no aggs used (row, aggs) => row.x / aggs.total // references a scalar aggregate (row, aggs) => aggs.rank[aggs.rank.indexOf(row.x)] // references a per-row aggregate\n */\n",
+          "docComment": "/**\n * An expression function. Receives a row snapshot and the current aggregate results, and returns a CellValue.\n *\n * @example\n * ```javascript\n * (row, aggs) => row.cost * row.quantity         // number, no aggs used\n * (row, aggs) => row.x / aggs.total              // references a scalar aggregate\n * (row, aggs) => aggs.rank[aggs.rank.indexOf(row.x)]  // references a per-row aggregate\n * ```\n *\n * @beta\n */\n",
           "excerptTokens": [
             {
               "kind": "Content",
@@ -1199,7 +1297,7 @@
             }
           ],
           "fileUrlPath": "src/expr.ts",
-          "releaseTag": "Public",
+          "releaseTag": "Beta",
           "name": "ExprFn",
           "typeTokenRange": {
             "startIndex": 1,
@@ -1209,7 +1307,7 @@
         {
           "kind": "TypeAlias",
           "canonicalReference": "no-sheet-ona-lib!Row:type",
-          "docComment": "/**\n * A snapshot of all columns available when an expression is evaluated. Keys are column names; values are the cell value for the current row.\n *\n * `Row` is continuously updated as definitions are applied: it starts with the input table's columns and gains a new entry for each definition that has been evaluated before the current one. Later expression functions therefore have access to all columns produced by earlier definitions.\n */\n",
+          "docComment": "/**\n * A snapshot of all columns available when an expression is evaluated. Keys are column names; values are the cell value for the current row.\n *\n * `Row` is continuously updated as definitions are applied: it starts with the input table's columns and gains a new entry for each definition that has been evaluated before the current one. Later expression functions therefore have access to all columns produced by earlier definitions.\n *\n * @beta\n */\n",
           "excerptTokens": [
             {
               "kind": "Content",
@@ -1239,7 +1337,7 @@
             }
           ],
           "fileUrlPath": "src/expr.ts",
-          "releaseTag": "Public",
+          "releaseTag": "Beta",
           "name": "Row",
           "typeTokenRange": {
             "startIndex": 1,
@@ -1249,7 +1347,7 @@
         {
           "kind": "TypeAlias",
           "canonicalReference": "no-sheet-ona-lib!Table:type",
-          "docComment": "/**\n * A table is a set of named columns, each holding one cell value per row. All columns must have the same length. Column values may be number, string, bigint, or boolean.\n */\n",
+          "docComment": "/**\n * A table is a set of named columns, each holding one cell value per row. All columns must have the same length. Column values may be number, string, bigint, or boolean.\n *\n * @beta\n */\n",
           "excerptTokens": [
             {
               "kind": "Content",
@@ -1288,11 +1386,99 @@
             }
           ],
           "fileUrlPath": "src/table.ts",
-          "releaseTag": "Public",
+          "releaseTag": "Beta",
           "name": "Table",
           "typeTokenRange": {
             "startIndex": 1,
             "endIndex": 7
+          }
+        },
+        {
+          "kind": "TypeAlias",
+          "canonicalReference": "no-sheet-ona-lib!TableToRow:type",
+          "docComment": "/**\n * Converts a table type (column arrays) to a row type (scalar values).\n *\n * @example\n * ```javascript\n * TableToRow<{ cost: number[]; label: string[] }>\n * // => { cost: number; label: string }\n * ```\n *\n * @beta\n */\n",
+          "excerptTokens": [
+            {
+              "kind": "Content",
+              "text": "export type TableToRow<T extends "
+            },
+            {
+              "kind": "Reference",
+              "text": "Record",
+              "canonicalReference": "!Record:type"
+            },
+            {
+              "kind": "Content",
+              "text": "<string, "
+            },
+            {
+              "kind": "Reference",
+              "text": "CellValue",
+              "canonicalReference": "no-sheet-ona-lib!~CellValue:type"
+            },
+            {
+              "kind": "Content",
+              "text": "[]>"
+            },
+            {
+              "kind": "Content",
+              "text": "> = "
+            },
+            {
+              "kind": "Content",
+              "text": "{\n    [K in keyof T]: T[K] extends readonly (infer V extends "
+            },
+            {
+              "kind": "Reference",
+              "text": "CellValue",
+              "canonicalReference": "no-sheet-ona-lib!~CellValue:type"
+            },
+            {
+              "kind": "Content",
+              "text": ")[] ? V : T[K] extends (infer V extends "
+            },
+            {
+              "kind": "Reference",
+              "text": "CellValue",
+              "canonicalReference": "no-sheet-ona-lib!~CellValue:type"
+            },
+            {
+              "kind": "Content",
+              "text": ")[] ? V : "
+            },
+            {
+              "kind": "Reference",
+              "text": "CellValue",
+              "canonicalReference": "no-sheet-ona-lib!~CellValue:type"
+            },
+            {
+              "kind": "Content",
+              "text": ";\n}"
+            },
+            {
+              "kind": "Content",
+              "text": ";"
+            }
+          ],
+          "fileUrlPath": "src/engine.ts",
+          "releaseTag": "Beta",
+          "name": "TableToRow",
+          "typeParameters": [
+            {
+              "typeParameterName": "T",
+              "constraintTokenRange": {
+                "startIndex": 1,
+                "endIndex": 5
+              },
+              "defaultTypeTokenRange": {
+                "startIndex": 0,
+                "endIndex": 0
+              }
+            }
+          ],
+          "typeTokenRange": {
+            "startIndex": 6,
+            "endIndex": 13
           }
         }
       ]

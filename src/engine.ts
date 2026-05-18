@@ -9,7 +9,7 @@ import type { CellValue, AggFn, AggRowFn } from "./expr.js";
  * // => { cost: number; label: string }
  * ```
  * 
- * @internal
+ * @beta
  */
 export type TableToRow<T extends Record<string, CellValue[]>> = {
   [K in keyof T]: T[K] extends readonly (infer V extends CellValue)[]
@@ -74,6 +74,7 @@ type Step = DefStep | AggStep | AggRowStep;
  *   .def("share",  (row, aggs) => (aggs.pct as number[])[???])  // see evaluate() for rowIndex
  *   .def("doubled", (row) => row.x * 2);
  * ```
+ * @beta
  */
 export class Engine<
   Input extends Record<string, CellValue[]>,
@@ -161,8 +162,8 @@ export class Engine<
    * @param headers - Mutable column name array. Row expression names are appended here.
    * @param rows    - Mutable 2D row array. Each inner array must match `headers.length`
    *                  on entry. Row expression values are pushed onto each row.
-   * @throws {Error} if a def name already exists in `headers`.
-   * @throws {Error} if any row length does not match `headers` length on entry.
+   * @throws `{Error}` if a def name already exists in `headers`.
+   * @throws `{Error}` if any row length does not match `headers` length on entry.
    */
   evaluate(headers: string[], rows: CellValue[][]): void;
   /**
@@ -173,7 +174,7 @@ export class Engine<
    *
    * @param headers - Mutable column name array. Row expression names are appended here.
    * @param rows    - Mutable object rows. Each object must contain input column keys.
-   * @throws {Error} if a def name already exists in `headers`.
+   * @throws `{Error}` if a def name already exists in `headers`.
    */
   evaluate(headers: string[], rows: Array<Record<string, CellValue>>): void;
   evaluate(headers: string[], rows: CellValue[][] | Array<Record<string, CellValue>>): void {

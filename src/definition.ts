@@ -5,7 +5,7 @@ import type { ExprFn } from "./expr.js";
  *
  * Corresponds to a statement like `net = cost * quantity` in the spec.
  * The name becomes a new column in the table after evaluation.
- * @internal
+ * @beta
  */
 export type Definition = {
   readonly name: string;
@@ -23,7 +23,7 @@ export type Definition = {
  * def("active", (row: Row) => row.quantity > 2)         // boolean column
  * ```
  * 
- * @internal
+ * @beta
  */
 export function def(name: string, fn: ExprFn): Definition {
   return { name, fn };
