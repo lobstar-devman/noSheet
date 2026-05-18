@@ -1,5 +1,5 @@
 {
-  "name": "no-sheet-ona-lib",
+  "name": "no-sheet",
   "version": "0.1.0",
   "description": "A programmatic computation engine library. Computations are defined in code — not as string expressions or spreadsheet-style formulas.",
   "types": "dist/index.d.ts",

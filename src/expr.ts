@@ -1,5 +1,7 @@
 /**
  * The set of value types a column can hold.
+ * 
+ * @beta
  */
 export type CellValue = number | string | bigint | boolean;
 

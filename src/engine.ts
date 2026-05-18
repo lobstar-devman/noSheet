@@ -1,5 +1,5 @@
 import type { CellValue, AggFn, AggRowFn } from "./expr.js";
-
+export type { CellValue, AggFn, AggRowFn };
 /**
  * Converts a table type (column arrays) to a row type (scalar values).
  *
@@ -21,25 +21,37 @@ export type TableToRow<T extends Record<string, CellValue[]>> = {
 
 // ── Internal step discriminated union ─────────────────────────────────────────
 
-type DefStep = {
+/**
+ * @beta
+ */
+export type DefStep = {
   kind: "def";
   name: string;
   fn: (row: Record<string, CellValue>, aggs: Record<string, CellValue | CellValue[]>) => CellValue;
 };
 
-type AggStep = {
+/**
+ * @beta
+ */
+export type AggStep = {
   kind: "agg";
   name: string;
   fn: AggFn;
 };
 
-type AggRowStep = {
+/**
+ * @beta
+ */
+export type AggRowStep = {
   kind: "aggRow";
   name: string;
   fn: AggRowFn;
 };
 
-type Step = DefStep | AggStep | AggRowStep;
+/**
+ * @beta
+ */
+export type Step = DefStep | AggStep | AggRowStep;
 
 // ── Engine ────────────────────────────────────────────────────────────────────
 
