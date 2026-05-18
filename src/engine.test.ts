@@ -1,3 +1,5 @@
+import {describe, expect, it, test} from '@jest/globals';
+
 import type { CellValue } from "./expr.js";
 import { Engine } from "./engine.js";
 
@@ -225,8 +227,8 @@ describe("Engine.evaluate with object rows", () => {
     ];
 
     const engine = new Engine<{ cost: number[]; qty: number[] }>()
-      .def("net", (row) => (row.cost as number) * (row.qty as number))
-      .def("total", (row) => (row.net as number) + 1);
+      .def("net", (row) => row.cost * row.qty)
+      .def("total", (row) => row.net + 1);
 
     engine.evaluate(headers, rows);
 
@@ -237,4 +239,27 @@ describe("Engine.evaluate with object rows", () => {
       { cost: 8, qty: 4, net: 32, total: 33 },
     ]);
   });
+});
+
+describe("Engine.evaluateMap with object rows", () => {
+  test("mutates object rows and appends computed columns", () => {
+    const rows = [
+      { cost: 3, qty: 2 },
+      { cost: 7, qty: 3 },
+      { cost: 8, qty: 4 },
+    ];
+
+    const engine = new Engine<{ cost: number[]; qty: number[] }>()
+      .def("net", (row) => row.cost * row.qty)
+      .def("total", (row) => row.net + 1);
+
+    const headers = engine.evaluateMap(rows);
+
+    expect(headers).toEqual(["cost", "qty", "net", "total"]);
+    expect(rows).toEqual([
+      { cost: 3, qty: 2, net: 6, total: 7 },
+      { cost: 7, qty: 3, net: 21, total: 22 },
+      { cost: 8, qty: 4, net: 32, total: 33 },
+    ]);
+  });  
 });

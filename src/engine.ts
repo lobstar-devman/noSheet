@@ -188,6 +188,7 @@ export class Engine<
    * @param rows    - Mutable object rows. Each object must contain input column keys.
    * @throws `{Error}` if a def name already exists in `headers`.
    */
+  /* eslint-disable @typescript-eslint/unified-signatures*/ 
   evaluate(headers: string[], rows: Array<Record<string, CellValue>>): void;
   evaluate(headers: string[], rows: CellValue[][] | Array<Record<string, CellValue>>): void {
     if (Array.isArray(rows) && rows.length > 0 && !Array.isArray(rows[0])) {
@@ -263,5 +264,23 @@ export class Engine<
         headers.push(step.name);
       }
     }
+  }
+
+  /**
+   * Evaluates all steps against the supplied row objects, mutating them in-place.
+   *
+   * Each object is expected to contain keys for all input columns. New computed
+   * properties are assigned directly onto the original objects.
+   *
+   * @param rows    - Mutable object rows. Each object must contain input column keys.
+   * @returns       - column name array. Row expression names are appended here
+   * @throws `{Error}` if a def name already exists in `headers`.
+   */
+  evaluateMap(rows: Array<Record<string, CellValue>>): string[] {
+
+    const headers = Object.keys(rows[0]);
+    this.evaluate(headers , rows);    
+    
+    return headers;
   }
 }
