@@ -214,3 +214,27 @@ describe("Engine — edge cases", () => {
     }).toThrow("does not match headers length");
   });
 });
+
+describe("Engine.evaluate with object rows", () => {
+  test("mutates object rows and appends computed columns", () => {
+    const headers = ["cost", "qty"];
+    const rows = [
+      { cost: 3, qty: 2 },
+      { cost: 7, qty: 3 },
+      { cost: 8, qty: 4 },
+    ];
+
+    const engine = new Engine<{ cost: number[]; qty: number[] }>()
+      .def("net", (row) => (row.cost as number) * (row.qty as number))
+      .def("total", (row) => (row.net as number) + 1);
+
+    engine.evaluate(headers, rows);
+
+    expect(headers).toEqual(["cost", "qty", "net", "total"]);
+    expect(rows).toEqual([
+      { cost: 3, qty: 2, net: 6, total: 7 },
+      { cost: 7, qty: 3, net: 21, total: 22 },
+      { cost: 8, qty: 4, net: 32, total: 33 },
+    ]);
+  });
+});

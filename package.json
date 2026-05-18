@@ -1,14 +1,17 @@
 {
-  "name": "no-sheet-ona-lib",
+  "name": "no-sheet",
   "version": "0.1.0",
   "description": "A programmatic computation engine library. Computations are defined in code — not as string expressions or spreadsheet-style formulas.",
-  "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "main": "dist/index.js",
+  "type": "module",
+  "module": "dist/noSheet.esm.js",
+  "browser": "dist/noSheet.umd.js",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc --project tsconfig.build.json",
+    "build:tsc": "tsc --project tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src",
@@ -16,26 +19,43 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "api-extractor": "api-extractor run --local --verbose",
+    "build": "rollup -c && api-extractor run --local --verbose",
+    "dev:watch": "rollup -c -w"
   },
   "keywords": [
     "computation",
     "engine",
     "graph",
+    "DAG",
     "typescript"
   ],
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@rollup/plugin-commonjs": "^29.0.2",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@rollup/plugin-url": "^8.0.2",
     "@types/jest": "^29.5.14",
+    "@types/node": "^25.7.0",
     "@typescript-eslint/eslint-plugin": "^8.31.0",
     "@typescript-eslint/parser": "^8.31.0",
     "eslint": "^9.25.0",
     "eslint-config-prettier": "^10.1.2",
     "jest": "^29.7.0",
     "prettier": "^3.5.3",
+    "rollup": "^4.60.3",
+    "rollup-plugin-livereload": "^2.0.5",
+    "rollup-plugin-postcss": "^4.0.2",
+    "rollup-plugin-serve": "^3.0.0",
     "ts-jest": "^29.3.2",
-    "typescript": "^5.8.3",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.0"
+  },
+  "dependencies": {
+    "tslib": "^2.8.1"
   }
 }
