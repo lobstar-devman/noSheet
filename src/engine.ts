@@ -148,7 +148,7 @@ export class Engine<
     return new Engine<Input, Cols, Aggs & Record<Name, V[]>>([...this.#steps, step]);
   }
 
-  /**
+/**
    * Evaluates all steps against the supplied rows, mutating them in-place.
    *
    * Steps are executed in declaration order. Aggregate steps run once across all rows
@@ -164,8 +164,53 @@ export class Engine<
    * @throws {Error} if a def name already exists in `headers`.
    * @throws {Error} if any row length does not match `headers` length on entry.
    */
-  evaluate(headers: string[], rows: CellValue[][]): void {
-    for (const row of rows) {
+  evaluate(headers: string[], rows: CellValue[][]): void;
+  /**
+   * Evaluates all steps against the supplied row objects, mutating them in-place.
+   *
+   * Each object is expected to contain keys for all input columns. New computed
+   * properties are assigned directly onto the original objects.
+   *
+   * @param headers - Mutable column name array. Row expression names are appended here.
+   * @param rows    - Mutable object rows. Each object must contain input column keys.
+   * @throws {Error} if a def name already exists in `headers`.
+   */
+  evaluate(headers: string[], rows: Array<Record<string, CellValue>>): void;
+  evaluate(headers: string[], rows: CellValue[][] | Array<Record<string, CellValue>>): void {
+    if (Array.isArray(rows) && rows.length > 0 && !Array.isArray(rows[0])) {
+      const objectRows = rows as Array<Record<string, CellValue>>;
+      const aggs: Record<string, CellValue | CellValue[]> = {};
+
+      const buildCols = (): Record<string, CellValue[]> => {
+        const cols: Record<string, CellValue[]> = {};
+        for (const header of headers) {
+          cols[header] = objectRows.map((row) => row[header]);
+        }
+        return cols;
+      };
+
+      for (const step of this.#steps) {
+        if (step.kind === "agg") {
+          aggs[step.name] = step.fn(buildCols(), aggs);
+        } else if (step.kind === "aggRow") {
+          aggs[step.name] = step.fn(buildCols(), aggs);
+        } else {
+          if (headers.includes(step.name)) {
+            throw new Error(`Column "${step.name}" already exists in headers.`);
+          }
+          for (let i = 0; i < objectRows.length; i++) {
+            step.fn(objectRows[i], aggs);
+            objectRows[i][step.name] = step.fn(objectRows[i], aggs);
+          }
+          headers.push(step.name);
+        }
+      }
+
+      return;
+    }
+
+    const arrayRows = rows as CellValue[][];
+    for (const row of arrayRows) {
       if (row.length !== headers.length) {
         throw new Error(
           `Row length ${String(row.length)} does not match headers length ${String(headers.length)}.`,
@@ -178,7 +223,7 @@ export class Engine<
     const buildCols = (): Record<string, CellValue[]> => {
       const cols: Record<string, CellValue[]> = {};
       for (let c = 0; c < headers.length; c++) {
-        cols[headers[c]] = rows.map((row) => row[c]);
+        cols[headers[c]] = arrayRows.map((row) => row[c]);
       }
       return cols;
     };
@@ -191,12 +236,11 @@ export class Engine<
       } else if (step.kind === "aggRow") {
         aggs[step.name] = step.fn(buildCols(), aggs);
       } else {
-        // def
         if (headers.includes(step.name)) {
           throw new Error(`Column "${step.name}" already exists in headers.`);
         }
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows[i];
+        for (let i = 0; i < arrayRows.length; i++) {
+          const row = arrayRows[i];
           const snapshot: Record<string, CellValue> = {};
           for (let c = 0; c < headers.length; c++) {
             snapshot[headers[c]] = row[c];

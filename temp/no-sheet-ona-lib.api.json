@@ -1048,6 +1048,93 @@
               "isOptional": false,
               "isAbstract": false,
               "name": "evaluate"
+            },
+            {
+              "kind": "Method",
+              "canonicalReference": "no-sheet-ona-lib!Engine#evaluate:member(2)",
+              "docComment": "/**\n * Evaluates all steps against the supplied row objects, mutating them in-place.\n *\n * Each object is expected to contain keys for all input columns. New computed properties are assigned directly onto the original objects.\n *\n * @param headers - Mutable column name array. Row expression names are appended here.\n *\n * @param rows - Mutable object rows. Each object must contain input column keys.\n *\n * @throws\n *\n * {Error} if a def name already exists in `headers`.\n */\n",
+              "excerptTokens": [
+                {
+                  "kind": "Content",
+                  "text": "evaluate(headers: "
+                },
+                {
+                  "kind": "Content",
+                  "text": "string[]"
+                },
+                {
+                  "kind": "Content",
+                  "text": ", rows: "
+                },
+                {
+                  "kind": "Reference",
+                  "text": "Array",
+                  "canonicalReference": "!Array:interface"
+                },
+                {
+                  "kind": "Content",
+                  "text": "<"
+                },
+                {
+                  "kind": "Reference",
+                  "text": "Record",
+                  "canonicalReference": "!Record:type"
+                },
+                {
+                  "kind": "Content",
+                  "text": "<string, "
+                },
+                {
+                  "kind": "Reference",
+                  "text": "CellValue",
+                  "canonicalReference": "no-sheet-ona-lib!~CellValue:type"
+                },
+                {
+                  "kind": "Content",
+                  "text": ">>"
+                },
+                {
+                  "kind": "Content",
+                  "text": "): "
+                },
+                {
+                  "kind": "Content",
+                  "text": "void"
+                },
+                {
+                  "kind": "Content",
+                  "text": ";"
+                }
+              ],
+              "isStatic": false,
+              "returnTypeTokenRange": {
+                "startIndex": 10,
+                "endIndex": 11
+              },
+              "releaseTag": "Public",
+              "isProtected": false,
+              "overloadIndex": 2,
+              "parameters": [
+                {
+                  "parameterName": "headers",
+                  "parameterTypeTokenRange": {
+                    "startIndex": 1,
+                    "endIndex": 2
+                  },
+                  "isOptional": false
+                },
+                {
+                  "parameterName": "rows",
+                  "parameterTypeTokenRange": {
+                    "startIndex": 3,
+                    "endIndex": 9
+                  },
+                  "isOptional": false
+                }
+              ],
+              "isOptional": false,
+              "isAbstract": false,
+              "name": "evaluate"
             }
           ],
           "implementsTokenRanges": []

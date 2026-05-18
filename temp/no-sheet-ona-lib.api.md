@@ -44,6 +44,7 @@ export class Engine<Input extends Record<string, CellValue[]>, Cols extends Reco
     }, aggs: Aggs) => V[]): Engine<Input, Cols, Aggs & Record<Name, V[]>>;
     def<Name extends string, V extends CellValue>(name: Name, fn: (row: Cols, aggs: Aggs) => V): Engine<Input, Cols & Record<Name, V>, Aggs>;
     evaluate(headers: string[], rows: CellValue[][]): void;
+    evaluate(headers: string[], rows: Array<Record<string, CellValue>>): void;
 }
 
 // @public
