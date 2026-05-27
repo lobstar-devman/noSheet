@@ -11,12 +11,12 @@ export type { CellValue, AggFn, AggRowFn };
  *
  * @beta
  */
-export type TableToRow<T extends Record<string, CellValue[]>> = {
-  [K in keyof T]: T[K] extends readonly (infer V extends CellValue)[]
+export type TableToRow<T extends Record<string, CellValue[]>, Val extends CellValue = CellValue> = {
+  [K in keyof T]: T[K] extends readonly (infer V extends Val)[]
     ? V
-    : T[K] extends (infer V extends CellValue)[]
+    : T[K] extends (infer V extends Val)[]
       ? V
-      : CellValue;
+      : Val;
 };
 
 // ── Internal step discriminated union ─────────────────────────────────────────
@@ -75,6 +75,9 @@ export type Step = DefStep | AggStep | AggRowStep;
  *   it does NOT appear in the output rows. Row expressions access it via `aggs.name[i]`.
  *
  * @typeParam Input - The input table type.
+ * @typeParam Val   - The value type for all cells. Defaults to {@link CellValue}; pass a
+ *                   narrower union (e.g. `CellValue | Decimal`) to allow library-specific
+ *                   types to flow through without casting.
  * @typeParam Cols  - Accumulated row type (grows with each `.def()` call).
  * @typeParam Aggs  - Accumulated aggregate type (grows with each `.agg()` / `.aggRow()` call).
  *
@@ -90,8 +93,9 @@ export type Step = DefStep | AggStep | AggRowStep;
  */
 export class Engine<
   Input extends Record<string, CellValue[]>,
-  Cols extends Record<string, CellValue> = TableToRow<Input>,
-  Aggs extends Record<string, CellValue | CellValue[]> = Record<never, never>,
+  Val extends CellValue = CellValue,
+  Cols extends Record<string, Val> = TableToRow<Input, Val>,
+  Aggs extends Record<string, Val | Val[]> = Record<never, never>,
 > {
   readonly #steps: Step[];
 
@@ -106,16 +110,16 @@ export class Engine<
    * @param fn   - Receives the current row (typed to `Cols`) and all computed aggregates
    *               (typed to `Aggs`). Returns the value for this row.
    */
-  def<Name extends string, V extends CellValue>(
+  def<Name extends string, V extends Val>(
     name: Name,
     fn: (row: Cols, aggs: Aggs) => V,
-  ): Engine<Input, Cols & Record<Name, V>, Aggs> {
+  ): Engine<Input, Val, Cols & Record<Name, V>, Aggs> {
     const step: DefStep = {
       kind: "def",
       name,
       fn: fn as unknown as DefStep["fn"],
     };
-    return new Engine<Input, Cols & Record<Name, V>, Aggs>([...this.#steps, step]);
+    return new Engine<Input, Val, Cols & Record<Name, V>, Aggs>([...this.#steps, step]);
   }
 
   /**
@@ -127,16 +131,16 @@ export class Engine<
    *               produced by earlier `.def()` steps) and previously computed aggregates.
    *               Returns a single CellValue.
    */
-  agg<Name extends string, V extends CellValue>(
+  agg<Name extends string, V extends Val>(
     name: Name,
-    fn: (cols: Input & { [K in keyof Cols]: CellValue[] }, aggs: Aggs) => V,
-  ): Engine<Input, Cols, Aggs & Record<Name, V>> {
+    fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: Aggs) => V,
+  ): Engine<Input, Val, Cols, Aggs & Record<Name, V>> {
     const step: AggStep = {
       kind: "agg",
       name,
       fn: fn as unknown as AggFn,
     };
-    return new Engine<Input, Cols, Aggs & Record<Name, V>>([...this.#steps, step]);
+    return new Engine<Input, Val, Cols, Aggs & Record<Name, V>>([...this.#steps, step]);
   }
 
   /**
@@ -149,16 +153,16 @@ export class Engine<
    *               produced by earlier `.def()` steps) and previously computed aggregates.
    *               Returns a `V[]` with one value per row.
    */
-  aggRow<Name extends string, V extends CellValue>(
+  aggRow<Name extends string, V extends Val>(
     name: Name,
-    fn: (cols: Input & { [K in keyof Cols]: CellValue[] }, aggs: Aggs) => V[],
-  ): Engine<Input, Cols, Aggs & Record<Name, V[]>> {
+    fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: Aggs) => V[],
+  ): Engine<Input, Val, Cols, Aggs & Record<Name, V[]>> {
     const step: AggRowStep = {
       kind: "aggRow",
       name,
       fn: fn as unknown as AggRowFn,
     };
-    return new Engine<Input, Cols, Aggs & Record<Name, V[]>>([...this.#steps, step]);
+    return new Engine<Input, Val, Cols, Aggs & Record<Name, V[]>>([...this.#steps, step]);
   }
 
   /**
@@ -177,7 +181,7 @@ export class Engine<
    * @throws `{Error}` if a def name already exists in `headers`.
    * @throws `{Error}` if any row length does not match `headers` length on entry.
    */
-  evaluate(headers: string[], rows: CellValue[][]): void;
+  evaluate(headers: string[], rows: Val[][]): void;
   /**
    * Evaluates all steps against the supplied row objects, mutating them in-place.
    *
@@ -188,8 +192,7 @@ export class Engine<
    * @param rows    - Mutable object rows. Each object must contain input column keys.
    * @throws `{Error}` if a def name already exists in `headers`.
    */
-  /* eslint-disable @typescript-eslint/unified-signatures*/
-  evaluate(headers: string[], rows: Array<Record<string, CellValue>>): void;
+  evaluate(headers: string[], rows: Array<Record<string, Val>>): void;
   evaluate(headers: string[], rows: CellValue[][] | Array<Record<string, CellValue>>): void {
     if (Array.isArray(rows) && rows.length > 0 && !Array.isArray(rows[0])) {
       const objectRows = rows as Array<Record<string, CellValue>>;
