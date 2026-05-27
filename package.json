@@ -21,7 +21,7 @@
     "test:coverage": "jest --coverage",
     "clean": "rm -rf dist",
     "api-extractor": "api-extractor run --local --verbose",
-    "rollup" : "rollup -c",
+    "rollup": "rollup -c",
     "build": "rollup -c && api-extractor run --local --verbose",
     "dev:watch": "rollup -c -w"
   },
