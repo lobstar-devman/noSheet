@@ -111,7 +111,7 @@ describe("applyDefinitions — non-number column types", () => {
 
   it("bigint column", () => {
     const result = applyDefinitions({ cost: [3, 7, 8] }, [
-      def("bigCost", (row: Row) => BigInt(row.cost)),
+      def("bigCost", (row: Row) => BigInt(row.cost as number)),
     ]);
     expect(result["bigCost"]).toEqual([3n, 7n, 8n]);
   });
