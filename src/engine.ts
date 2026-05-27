@@ -11,12 +11,8 @@ export type { CellValue, AggFn, AggRowFn };
  *
  * @beta
  */
-export type TableToRow<T extends Record<string, CellValue[]>, Val extends CellValue = CellValue> = {
-  [K in keyof T]: T[K] extends readonly (infer V extends Val)[]
-    ? V
-    : T[K] extends (infer V extends Val)[]
-      ? V
-      : Val;
+export type TableToRow<T extends Record<string, CellValue[]>> = {
+  [K in keyof T]: T[K][number];
 };
 
 // ── Internal step discriminated union ─────────────────────────────────────────
@@ -94,7 +90,7 @@ export type Step = DefStep | AggStep | AggRowStep;
 export class Engine<
   Input extends Record<string, CellValue[]>,
   Val extends CellValue = CellValue,
-  Cols extends Record<string, Val> = TableToRow<Input, Val>,
+  Cols extends { [K in keyof Input]: Input[K][number] } = TableToRow<Input>,
   Aggs extends Record<string, Val | Val[]> = Record<never, never>,
 > {
   readonly #steps: Step[];
@@ -112,7 +108,7 @@ export class Engine<
    */
   def<Name extends string, V extends Val>(
     name: Name,
-    fn: (row: Cols, aggs: Aggs) => V,
+    fn: (row: Cols & { [K in keyof Input]: Input[K][number] }, aggs: Aggs) => V,
   ): Engine<Input, Val, Cols & Record<Name, V>, Aggs> {
     const step: DefStep = {
       kind: "def",
