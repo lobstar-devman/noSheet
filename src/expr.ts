@@ -1,9 +1,22 @@
 /**
- * The set of value types a column can hold.
+ * An opaque record produced by an external library (e.g. a mathjs `Complex` or
+ * `Matrix`, or a decimal.js `Decimal`). Values are typed as `unknown` so that
+ * library-specific properties pass through without requiring type assertions at
+ * the definition layer.
  *
  * @beta
  */
-export type CellValue = number | string | bigint | boolean;
+export type CellRecord = { readonly [key: string]: unknown };
+
+/**
+ * The set of value types a column can hold.
+ *
+ * Includes {@link CellRecord} to support opaque objects returned by external
+ * numeric libraries such as mathjs or decimal.js.
+ *
+ * @beta
+ */
+export type CellValue = number | string | bigint | boolean | CellRecord;
 
 /**
  * A snapshot of all columns available when an expression is evaluated.
