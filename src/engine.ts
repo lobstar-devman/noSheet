@@ -1,5 +1,22 @@
 import type { CellValue, AggFn, AggRowFn } from "./expr.js";
 export type { CellValue, AggFn, AggRowFn };
+
+/**
+ * Compiles an expression string into a reusable scope evaluator.
+ * The outer call happens once per expression (pre-compilation);
+ * the returned function is invoked once per row or column evaluation.
+ *
+ * @example
+ * ```javascript
+ * const compiler: ExprCompiler = (expr) => {
+ *   const compiled = math.compile(expr);
+ *   return (scope) => compiled.evaluate(scope);
+ * };
+ * new Engine(compiler).def("cost", "price * qty");
+ * ```
+ * @beta
+ */
+export type ExprCompiler = (expression: string) => (scope: Record<string, unknown>) => unknown;
 /**
  * Converts a table type (column arrays) to a row type (scalar values).
  *
@@ -94,9 +111,18 @@ export class Engine<
   Aggs extends Record<string, Val | Val[]> = Record<never, never>,
 > {
   readonly #steps: Step[];
+  readonly #compiler: ExprCompiler | undefined;
 
-  constructor(steps: Step[] = []) {
-    this.#steps = steps;
+  constructor(compiler?: ExprCompiler)
+  constructor(steps: Step[], compiler?: ExprCompiler)
+  constructor(stepsOrCompiler?: Step[] | ExprCompiler, compiler?: ExprCompiler) {
+    if (Array.isArray(stepsOrCompiler)) {
+      this.#steps = stepsOrCompiler;
+      this.#compiler = compiler;
+    } else {
+      this.#steps = [];
+      this.#compiler = stepsOrCompiler;
+    }
   }
 
   /**
@@ -109,13 +135,17 @@ export class Engine<
   def<Name extends string, V extends Val>(
     name: Name,
     fn: (row: Cols & { [K in keyof Input]: Input[K][number] }, aggs: Aggs) => V,
-  ): Engine<Input, Val, Cols & Record<Name, V>, Aggs> {
-    const step: DefStep = {
-      kind: "def",
-      name,
-      fn: fn as unknown as DefStep["fn"],
-    };
-    return new Engine<Input, Val, Cols & Record<Name, V>, Aggs>([...this.#steps, step]);
+  ): Engine<Input, Val, Cols & Record<Name, V>, Aggs>
+  def<Name extends string>(
+    name: Name,
+    expression: string,
+  ): Engine<Input, Val, Cols & Record<Name, Val>, Aggs>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  def(name: string, fnOrExpr: any): any {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const fn = typeof fnOrExpr === "string" ? this.#makeDefFn(fnOrExpr) : fnOrExpr;
+    const step: DefStep = { kind: "def", name, fn: fn as unknown as DefStep["fn"] };
+    return new Engine([...this.#steps, step], this.#compiler);
   }
 
   /**
@@ -130,13 +160,17 @@ export class Engine<
   agg<Name extends string, V extends Val>(
     name: Name,
     fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: Aggs) => V,
-  ): Engine<Input, Val, Cols, Aggs & Record<Name, V>> {
-    const step: AggStep = {
-      kind: "agg",
-      name,
-      fn: fn as unknown as AggFn,
-    };
-    return new Engine<Input, Val, Cols, Aggs & Record<Name, V>>([...this.#steps, step]);
+  ): Engine<Input, Val, Cols, Aggs & Record<Name, V>>
+  agg<Name extends string>(
+    name: Name,
+    expression: string,
+  ): Engine<Input, Val, Cols, Aggs & Record<Name, Val>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  agg(name: string, fnOrExpr: any): any {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const fn = typeof fnOrExpr === "string" ? this.#makeAggFn(fnOrExpr) : fnOrExpr;
+    const step: AggStep = { kind: "agg", name, fn: fn as AggFn };
+    return new Engine([...this.#steps, step], this.#compiler);
   }
 
   /**
@@ -152,13 +186,40 @@ export class Engine<
   aggRow<Name extends string, V extends Val>(
     name: Name,
     fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: Aggs) => V[],
-  ): Engine<Input, Val, Cols, Aggs & Record<Name, V[]>> {
-    const step: AggRowStep = {
-      kind: "aggRow",
-      name,
-      fn: fn as unknown as AggRowFn,
-    };
-    return new Engine<Input, Val, Cols, Aggs & Record<Name, V[]>>([...this.#steps, step]);
+  ): Engine<Input, Val, Cols, Aggs & Record<Name, V[]>>
+  aggRow<Name extends string>(
+    name: Name,
+    expression: string,
+  ): Engine<Input, Val, Cols, Aggs & Record<Name, Val[]>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  aggRow(name: string, fnOrExpr: any): any {
+    const fn = typeof fnOrExpr === "string" ? this.#makeAggRowFn(fnOrExpr) : fnOrExpr;
+    const step: AggRowStep = { kind: "aggRow", name, fn: fn as unknown as AggRowFn };
+    return new Engine([...this.#steps, step], this.#compiler);
+  }
+
+  #requireCompiler(expression: string): (scope: Record<string, unknown>) => unknown {
+    if (!this.#compiler) {
+      throw new Error(
+        `Expression "${expression}" requires a compiler. Pass one to the Engine constructor: new Engine(compiler).`,
+      );
+    }
+    return this.#compiler(expression);
+  }
+
+  #makeDefFn(expression: string): DefStep["fn"] {
+    const evaluate = this.#requireCompiler(expression);
+    return (row, aggs) => evaluate({ ...row, ...aggs }) as CellValue;
+  }
+
+  #makeAggFn(expression: string): AggFn {
+    const evaluate = this.#requireCompiler(expression);
+    return (cols, aggs) => evaluate({ ...cols, ...aggs }) as CellValue;
+  }
+
+  #makeAggRowFn(expression: string): AggRowFn {
+    const evaluate = this.#requireCompiler(expression);
+    return (cols, aggs) => evaluate({ ...cols, ...aggs }) as CellValue[];
   }
 
   /**

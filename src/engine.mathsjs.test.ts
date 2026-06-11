@@ -1,11 +1,19 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it, jest } from "@jest/globals";
 import { create, all } from "mathjs";
 import type { BigNumber } from "mathjs";
 import { Engine } from "./engine.js";
+import type { ExprCompiler } from "./engine.js";
 
 // Configure a mathjs instance that uses BigNumber for all numeric literals.
 const math = create(all, { number: "BigNumber" });
-const bn = (n: number | string) => math.bignumber(n) as BigNumber;
+const bn = (n: number | string) => math.bignumber(n);
+
+// ExprCompiler that wraps a mathjs instance. The outer call compiles once;
+// the returned function is invoked per row/column evaluation.
+const mathCompiler: ExprCompiler = (expression) => {
+  const compiled = math.compile(expression);
+  return (scope) => compiled.evaluate(scope) as unknown;
+};
 
 describe("Engine — mathjs BigNumber with precompiled expressions", () => {
   it("precompiled expression uses row as scope to compute a product", () => {
@@ -73,9 +81,9 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
     new Engine<{ price: BigNumber[]; qty: BigNumber[] }, BigNumber>()
       .def("cost", (row) => costCompiled.evaluate(row) as BigNumber)
       .agg("totalCost", (cols) =>
-        (cols.cost as BigNumber[]).reduce((acc, v) => acc.add(v), bn(0)),
+        (cols.cost).reduce((acc, v) => acc.add(v), bn(0)),
       )
-      .def("share", (row, aggs) => row.cost.div(aggs.totalCost as BigNumber))
+      .def("share", (row, aggs) => row.cost.div(aggs.totalCost))
       .evaluate(headers, rows);
 
     // cost = [30, 40, 30], totalCost = 100
@@ -83,5 +91,96 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
     expect(rows[0][shareIdx].toNumber()).toBeCloseTo(0.3);
     expect(rows[1][shareIdx].toNumber()).toBeCloseTo(0.4);
     expect(rows[2][shareIdx].toNumber()).toBeCloseTo(0.3);
+  });
+});
+
+describe("Engine — expression strings with mathjs ExprCompiler", () => {
+  it(".def() with string expression precompiles once and evaluates per row", () => {
+    const innerSpy = jest.fn((scope: Record<string, unknown>) => scope);
+    const compiler: ExprCompiler = (expression) => {
+      const compiled = math.compile(expression);
+      return (scope) => {
+        innerSpy(scope);
+        return compiled.evaluate(scope) as unknown;
+      };
+    };
+
+    const headers = ["price", "qty"];
+    const rows: BigNumber[][] = [
+      [bn(10), bn(3)],
+      [bn(20), bn(2)],
+    ];
+
+    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, BigNumber>(compiler)
+      .def("cost", "price * qty")
+      .evaluate(headers, rows);
+
+    // inner evaluator called once per row, not once per compile
+    expect(innerSpy).toHaveBeenCalledTimes(2);
+    const idx = headers.indexOf("cost");
+    expect(rows[0][idx].toNumber()).toBe(30);
+    expect(rows[1][idx].toNumber()).toBe(40);
+  });
+
+  it(".agg() with string expression uses mathjs aggregate functions over a column", () => {
+    const headers = ["price", "qty"];
+    const rows: BigNumber[][] = [
+      [bn(10), bn(3)],
+      [bn(20), bn(2)],
+      [bn(5), bn(6)],
+    ];
+
+    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, BigNumber>(mathCompiler)
+      .def("cost", "price * qty")
+      .agg("totalCost", "sum(cost)")
+      .def("share", "cost / totalCost")
+      .evaluate(headers, rows);
+
+    // cost = [30, 40, 30], totalCost = 100
+    const shareIdx = headers.indexOf("share");
+    expect(rows[0][shareIdx].toNumber()).toBeCloseTo(0.3);
+    expect(rows[1][shareIdx].toNumber()).toBeCloseTo(0.4);
+    expect(rows[2][shareIdx].toNumber()).toBeCloseTo(0.3);
+  });
+
+  it(".aggRow() with string expression computes a per-row array over columns", () => {
+    const headers = ["cost"];
+    const rows: BigNumber[][] = [[bn(30)], [bn(40)], [bn(30)]];
+    let i = 0;
+
+    new Engine<{ cost: BigNumber[] }, BigNumber>(mathCompiler)
+      .aggRow("shares", "dotDivide(cost, sum(cost))")
+      .def("share", (_row, aggs) => aggs.shares[i++])
+      .evaluate(headers, rows);
+
+    // totalCost = 100; shares = [0.3, 0.4, 0.3]
+    const shareIdx = headers.indexOf("share");
+    expect(rows[0][shareIdx].toNumber()).toBeCloseTo(0.3);
+    expect(rows[1][shareIdx].toNumber()).toBeCloseTo(0.4);
+    expect(rows[2][shareIdx].toNumber()).toBeCloseTo(0.3);
+  });
+
+  it("throws when a string expression is used without a compiler", () => {
+    expect(() => {
+      new Engine<{ x: BigNumber[] }, BigNumber>().def("doubled", "x * 2");
+    }).toThrow(/requires a compiler/);
+  });
+
+  it("compiler outer function is called once per expression, not once per row", () => {
+    const outerSpy = jest.fn((expression: string) => {
+      const compiled = math.compile(expression);
+      return (scope: Record<string, unknown>) => compiled.evaluate(scope) as unknown;
+    });
+
+    const headers = ["x"];
+    const rows: BigNumber[][] = [[bn(1)], [bn(2)], [bn(3)], [bn(4)], [bn(5)]];
+
+    new Engine<{ x: BigNumber[] }, BigNumber>(outerSpy)
+      .def("doubled", "x * 2")
+      .evaluate(headers, rows);
+
+    // compile called once for "x * 2", not once per row
+    expect(outerSpy).toHaveBeenCalledTimes(1);
+    expect(outerSpy).toHaveBeenCalledWith("x * 2");
   });
 });
