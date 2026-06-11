@@ -219,4 +219,10 @@ describe("Engine — ExprCompiler<V> type enforcement", () => {
       // @ts-expect-error row.doubled is BigNumber — the * operator is not defined on it
       .def("bad", (row) => row.doubled * 2);
   });
+
+  it("TypeScript rejects string expressions when Input columns are not Val-typed", () => {
+    new Engine<{ a: string[] }, BigNumber>(mathCompiler)
+      // @ts-expect-error "a" is string[], but Val is BigNumber — string expressions require Input extends Record<string, Val[]>
+      .def("doubled", "a * 2");
+  });
 });

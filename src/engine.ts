@@ -138,7 +138,7 @@ export class Engine<
   ): Engine<Input, Val, Cols & Record<Name, V>, Aggs>
   def<Name extends string>(
     name: Name,
-    expression: string,
+    expression: [Input] extends [Record<string, Val[]>] ? string : never,
   ): Engine<Input, Val, Cols & Record<Name, Val>, Aggs>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   def(name: string, fnOrExpr: any): any {
@@ -163,7 +163,7 @@ export class Engine<
   ): Engine<Input, Val, Cols, Aggs & Record<Name, V>>
   agg<Name extends string>(
     name: Name,
-    expression: string,
+    expression: [Input] extends [Record<string, Val[]>] ? string : never,
   ): Engine<Input, Val, Cols, Aggs & Record<Name, Val>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agg(name: string, fnOrExpr: any): any {
@@ -189,7 +189,7 @@ export class Engine<
   ): Engine<Input, Val, Cols, Aggs & Record<Name, V[]>>
   aggRow<Name extends string>(
     name: Name,
-    expression: string,
+    expression: [Input] extends [Record<string, Val[]>] ? string : never,
   ): Engine<Input, Val, Cols, Aggs & Record<Name, Val[]>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   aggRow(name: string, fnOrExpr: any): any {
