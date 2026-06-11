@@ -144,7 +144,7 @@ export class Engine<
   def(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fn = typeof fnOrExpr === "string" ? this.#makeDefFn(fnOrExpr) : fnOrExpr;
-    const step: DefStep = { kind: "def", name, fn: fn as unknown as DefStep["fn"] };
+    const step: DefStep = { kind: "def", name, fn: fn as DefStep["fn"] };
     return new Engine([...this.#steps, step], this.#compiler);
   }
 
@@ -193,8 +193,9 @@ export class Engine<
   ): Engine<Input, Val, Cols, Aggs & Record<Name, Val[]>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   aggRow(name: string, fnOrExpr: any): any {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fn = typeof fnOrExpr === "string" ? this.#makeAggRowFn(fnOrExpr) : fnOrExpr;
-    const step: AggRowStep = { kind: "aggRow", name, fn: fn as unknown as AggRowFn };
+    const step: AggRowStep = { kind: "aggRow", name, fn: fn as AggRowFn };
     return new Engine([...this.#steps, step], this.#compiler);
   }
 
@@ -250,8 +251,56 @@ export class Engine<
    * @throws `{Error}` if a def name already exists in `headers`.
    */
   evaluate(headers: string[], rows: Array<Record<string, Val>>): void;
-  evaluate(headers: string[], rows: CellValue[][] | Array<Record<string, CellValue>>): void {
-    if (Array.isArray(rows) && rows.length > 0 && !Array.isArray(rows[0])) {
+  /**
+   * Evaluates all steps against the supplied row objects, mutating them in-place.
+   *
+   * Column names are derived from the keys of the first row; no `headers` array
+   * is required. New computed properties are assigned directly onto each object.
+   *
+   * @param rows - Mutable object rows. Each object must contain input column keys.
+   * @throws `{Error}` if a def name already exists as a key on the row objects.
+   */
+  evaluate(rows: Array<Record<string, Val>>): void;
+  evaluate(
+    headersOrRows: string[] | Array<Record<string, CellValue>>,
+    rows?: CellValue[][] | Array<Record<string, CellValue>>,
+  ): void {
+    // ── Headerless object-row path ────────────────────────────────────────────
+    if (rows === undefined) {
+      const objectRows = headersOrRows as Array<Record<string, CellValue>>;
+      const aggs: Record<string, CellValue | CellValue[]> = {};
+
+      const buildCols = (): Record<string, CellValue[]> => {
+        const cols: Record<string, CellValue[]> = {};
+        if (objectRows.length > 0) {
+          for (const key of Object.keys(objectRows[0])) {
+            cols[key] = objectRows.map((row) => row[key]);
+          }
+        }
+        return cols;
+      };
+
+      for (const step of this.#steps) {
+        if (step.kind === "agg") {
+          aggs[step.name] = step.fn(buildCols(), aggs);
+        } else if (step.kind === "aggRow") {
+          aggs[step.name] = step.fn(buildCols(), aggs);
+        } else {
+          if (objectRows.length > 0 && step.name in objectRows[0]) {
+            throw new Error(`Column "${step.name}" already exists.`);
+          }
+          for (const objectRow of objectRows) {
+            objectRow[step.name] = step.fn(objectRow, aggs);
+          }
+        }
+      }
+      return;
+    }
+
+    const headers = headersOrRows as string[];
+
+    // ── With-headers object-row path ──────────────────────────────────────────
+    if (rows.length > 0 && !Array.isArray(rows[0])) {
       const objectRows = rows as Array<Record<string, CellValue>>;
       const aggs: Record<string, CellValue | CellValue[]> = {};
 
@@ -272,17 +321,16 @@ export class Engine<
           if (headers.includes(step.name)) {
             throw new Error(`Column "${step.name}" already exists in headers.`);
           }
-          for (let i = 0; i < objectRows.length; i++) {
-            step.fn(objectRows[i], aggs);
-            objectRows[i][step.name] = step.fn(objectRows[i], aggs);
+          for (const objectRow of objectRows) {
+            objectRow[step.name] = step.fn(objectRow, aggs);
           }
           headers.push(step.name);
         }
       }
-
       return;
     }
 
+    // ── Array-row path ────────────────────────────────────────────────────────
     const arrayRows = rows as CellValue[][];
     for (const row of arrayRows) {
       if (row.length !== headers.length) {
@@ -292,8 +340,6 @@ export class Engine<
       }
     }
 
-    // Build the initial column map from headers + rows (column-oriented view).
-    // This is rebuilt lazily as needed for aggregate steps.
     const buildCols = (): Record<string, CellValue[]> => {
       const cols: Record<string, CellValue[]> = {};
       for (let c = 0; c < headers.length; c++) {

@@ -246,3 +246,57 @@ describe("Engine — edge cases", () => {
     }).toThrow("does not match headers length");
   });
 });
+describe("Engine.evaluate — headerless object-row overload", () => {
+  it("computes a def column and assigns it onto each object", () => {
+    const rows = [
+      { price: 10, qty: 3 },
+      { price: 20, qty: 2 },
+    ];
+
+    new Engine<{ price: number[]; qty: number[] }>()
+      .def("cost", (row) => row.price * row.qty)
+      .evaluate(rows);
+
+    expect(rows[0]).toMatchObject({ cost: 30 });
+    expect(rows[1]).toMatchObject({ cost: 40 });
+  });
+
+  it("agg and aggRow work using object keys as column names", () => {
+    const rows = [
+      { amount: 10 },
+      { amount: 20 },
+      { amount: 30 },
+    ];
+
+    new Engine<{ amount: number[] }>()
+      .agg("total", (cols) => cols.amount.reduce((a, b) => (a as number) + (b as number), 0))
+      .def("share", (row, aggs) => (row.amount as number) / (aggs.total as number))
+      .evaluate(rows);
+
+    const asMap = rows as Array<Record<string, number>>;
+    expect(asMap[0]["share"]).toBeCloseTo(10 / 60);
+    expect(asMap[1]["share"]).toBeCloseTo(20 / 60);
+    expect(asMap[2]["share"]).toBeCloseTo(30 / 60);
+  });
+
+  it("chained defs each see columns added by earlier defs", () => {
+    const rows = [{ x: 3 }, { x: 4 }];
+
+    new Engine<{ x: number[] }>()
+      .def("doubled", (row) => (row.x as number) * 2)
+      .def("tripled", (row) => (row.x as number) * 3)
+      .evaluate(rows);
+
+    expect(rows[0]).toMatchObject({ x: 3, doubled: 6, tripled: 9 });
+    expect(rows[1]).toMatchObject({ x: 4, doubled: 8, tripled: 12 });
+  });
+
+  it("throws when a def name already exists as a key on the row objects", () => {
+    const rows = [{ cost: 5, qty: 2 }];
+    expect(() => {
+      new Engine<{ cost: number[]; qty: number[] }>()
+        .def("cost", (row) => row.qty)
+        .evaluate(rows);
+    }).toThrow('Column "cost" already exists');
+  });
+});
