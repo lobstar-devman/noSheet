@@ -10,9 +10,9 @@ const bn = (n: number | string) => math.bignumber(n);
 
 // ExprCompiler that wraps a mathjs instance. The outer call compiles once;
 // the returned function is invoked per row/column evaluation.
-const mathCompiler: ExprCompiler = (expression) => {
+const mathCompiler: ExprCompiler<BigNumber> = (expression) => {
   const compiled = math.compile(expression);
-  return (scope) => compiled.evaluate(scope) as unknown;
+  return (scope) => compiled.evaluate(scope) as BigNumber | BigNumber[];
 };
 
 describe("Engine — mathjs BigNumber with precompiled expressions", () => {
@@ -97,11 +97,11 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
 describe("Engine — expression strings with mathjs ExprCompiler", () => {
   it(".def() with string expression precompiles once and evaluates per row", () => {
     const innerSpy = jest.fn((scope: Record<string, unknown>) => scope);
-    const compiler: ExprCompiler = (expression) => {
+    const compiler: ExprCompiler<BigNumber> = (expression) => {
       const compiled = math.compile(expression);
       return (scope) => {
         innerSpy(scope);
-        return compiled.evaluate(scope) as unknown;
+        return compiled.evaluate(scope) as BigNumber | BigNumber[];
       };
     };
 
@@ -167,9 +167,9 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
   });
 
   it("compiler outer function is called once per expression, not once per row", () => {
-    const outerSpy = jest.fn((expression: string) => {
+    const outerSpy: ExprCompiler<BigNumber> = jest.fn((expression: string) => {
       const compiled = math.compile(expression);
-      return (scope: Record<string, unknown>) => compiled.evaluate(scope) as unknown;
+      return (scope: Record<string, unknown>) => compiled.evaluate(scope) as BigNumber | BigNumber[];
     });
 
     const headers = ["x"];
@@ -182,5 +182,41 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
     // compile called once for "x * 2", not once per row
     expect(outerSpy).toHaveBeenCalledTimes(1);
     expect(outerSpy).toHaveBeenCalledWith("x * 2");
+  });
+});
+
+// ── Type-enforcement tests ────────────────────────────────────────────────────
+//
+// These tests verify TypeScript's compile-time enforcement of ExprCompiler<V>.
+// The @ts-expect-error annotations are validated by `npm run typecheck` (tsc
+// --noEmit): if a line no longer produces an error, tsc itself will error on
+// the @ts-expect-error comment, alerting you that enforcement has been lost.
+//
+describe("Engine — ExprCompiler<V> type enforcement", () => {
+  it("ExprCompiler<BigNumber> cannot be passed to an Engine typed for number", () => {
+    // @ts-expect-error ExprCompiler<BigNumber> is not assignable to ExprCompiler<number>
+    const engine = new Engine<{ x: number[] }, number>(mathCompiler);
+    expect(engine).toBeDefined(); // type error is compile-time only; runtime still runs
+  });
+
+  it("a column produced by a string .def() is typed as Val (BigNumber), enabling BigNumber methods", () => {
+    const headers = ["x"];
+    const rows: BigNumber[][] = [[bn(2)], [bn(4)]];
+
+    new Engine<{ x: BigNumber[] }, BigNumber>(mathCompiler)
+      .def("doubled", "x * 2")
+      // row.doubled is BigNumber — .add() is valid
+      .def("plusOne", (row) => row.doubled.add(bn(1)))
+      .evaluate(headers, rows);
+
+    expect(rows[0][headers.indexOf("plusOne")].toNumber()).toBe(5);
+    expect(rows[1][headers.indexOf("plusOne")].toNumber()).toBe(9);
+  });
+
+  it("TypeScript rejects treating a string-def column as a plain number", () => {
+    new Engine<{ x: BigNumber[] }, BigNumber>(mathCompiler)
+      .def("doubled", "x * 2")
+      // @ts-expect-error row.doubled is BigNumber — the * operator is not defined on it
+      .def("bad", (row) => row.doubled * 2);
   });
 });

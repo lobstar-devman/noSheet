@@ -16,7 +16,7 @@ export type { CellValue, AggFn, AggRowFn };
  * ```
  * @beta
  */
-export type ExprCompiler = (expression: string) => (scope: Record<string, unknown>) => unknown;
+export type ExprCompiler<V extends CellValue = CellValue> = (expression: string) => (scope: Record<string, unknown>) => V | V[];
 /**
  * Converts a table type (column arrays) to a row type (scalar values).
  *
@@ -111,11 +111,11 @@ export class Engine<
   Aggs extends Record<string, Val | Val[]> = Record<never, never>,
 > {
   readonly #steps: Step[];
-  readonly #compiler: ExprCompiler | undefined;
+  readonly #compiler: ExprCompiler<Val> | undefined;
 
-  constructor(compiler?: ExprCompiler)
-  constructor(steps: Step[], compiler?: ExprCompiler)
-  constructor(stepsOrCompiler?: Step[] | ExprCompiler, compiler?: ExprCompiler) {
+  constructor(compiler?: ExprCompiler<Val>)
+  constructor(steps: Step[], compiler?: ExprCompiler<Val>)
+  constructor(stepsOrCompiler?: Step[] | ExprCompiler<Val>, compiler?: ExprCompiler<Val>) {
     if (Array.isArray(stepsOrCompiler)) {
       this.#steps = stepsOrCompiler;
       this.#compiler = compiler;
@@ -198,7 +198,7 @@ export class Engine<
     return new Engine([...this.#steps, step], this.#compiler);
   }
 
-  #requireCompiler(expression: string): (scope: Record<string, unknown>) => unknown {
+  #requireCompiler(expression: string): (scope: Record<string, unknown>) => Val | Val[] {
     if (!this.#compiler) {
       throw new Error(
         `Expression "${expression}" requires a compiler. Pass one to the Engine constructor: new Engine(compiler).`,
@@ -209,17 +209,17 @@ export class Engine<
 
   #makeDefFn(expression: string): DefStep["fn"] {
     const evaluate = this.#requireCompiler(expression);
-    return (row, aggs) => evaluate({ ...row, ...aggs }) as CellValue;
+    return (row, aggs) => evaluate({ ...row, ...aggs });
   }
 
   #makeAggFn(expression: string): AggFn {
     const evaluate = this.#requireCompiler(expression);
-    return (cols, aggs) => evaluate({ ...cols, ...aggs }) as CellValue;
+    return (cols, aggs) => evaluate({ ...cols, ...aggs });
   }
 
   #makeAggRowFn(expression: string): AggRowFn {
     const evaluate = this.#requireCompiler(expression);
-    return (cols, aggs) => evaluate({ ...cols, ...aggs }) as CellValue[];
+    return (cols, aggs) => evaluate({ ...cols, ...aggs }) as unknown as CellValue[];
   }
 
   /**
