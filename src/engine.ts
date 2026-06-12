@@ -270,6 +270,17 @@ export class Engine<
       const objectRows = headersOrRows as Array<Record<string, CellValue>>;
       const aggs: Record<string, CellValue | CellValue[]> = {};
 
+      // Upfront duplicate-name validation — fails before any mutation
+      if (objectRows.length > 0) {
+        const keySet = new Set(Object.keys(objectRows[0]));
+        for (const step of this.#steps) {
+          if (step.kind === "def") {
+            if (keySet.has(step.name)) throw new Error(`Column "${step.name}" already exists.`);
+            keySet.add(step.name);
+          }
+        }
+      }
+
       const buildCols = (): Record<string, CellValue[]> => {
         const cols: Record<string, CellValue[]> = {};
         if (objectRows.length > 0) {
@@ -280,15 +291,17 @@ export class Engine<
         return cols;
       };
 
+      let cols: Record<string, CellValue[]> | null = null;
+
       for (const step of this.#steps) {
         if (step.kind === "agg") {
-          aggs[step.name] = step.fn(buildCols(), aggs);
+          if (!cols) cols = buildCols();
+          aggs[step.name] = step.fn(cols, aggs);
         } else if (step.kind === "aggRow") {
-          aggs[step.name] = step.fn(buildCols(), aggs);
+          if (!cols) cols = buildCols();
+          aggs[step.name] = step.fn(cols, aggs);
         } else {
-          if (objectRows.length > 0 && step.name in objectRows[0]) {
-            throw new Error(`Column "${step.name}" already exists.`);
-          }
+          cols = null;
           for (const objectRow of objectRows) {
             objectRow[step.name] = step.fn(objectRow, aggs);
           }
@@ -304,6 +317,16 @@ export class Engine<
       const objectRows = rows as Array<Record<string, CellValue>>;
       const aggs: Record<string, CellValue | CellValue[]> = {};
 
+      // Upfront duplicate-name validation — fails before any mutation
+      const headerSet = new Set(headers);
+      for (const step of this.#steps) {
+        if (step.kind === "def") {
+          if (headerSet.has(step.name))
+            throw new Error(`Column "${step.name}" already exists in headers.`);
+          headerSet.add(step.name);
+        }
+      }
+
       const buildCols = (): Record<string, CellValue[]> => {
         const cols: Record<string, CellValue[]> = {};
         for (const header of headers) {
@@ -312,15 +335,17 @@ export class Engine<
         return cols;
       };
 
+      let cols: Record<string, CellValue[]> | null = null;
+
       for (const step of this.#steps) {
         if (step.kind === "agg") {
-          aggs[step.name] = step.fn(buildCols(), aggs);
+          if (!cols) cols = buildCols();
+          aggs[step.name] = step.fn(cols, aggs);
         } else if (step.kind === "aggRow") {
-          aggs[step.name] = step.fn(buildCols(), aggs);
+          if (!cols) cols = buildCols();
+          aggs[step.name] = step.fn(cols, aggs);
         } else {
-          if (headers.includes(step.name)) {
-            throw new Error(`Column "${step.name}" already exists in headers.`);
-          }
+          cols = null;
           for (const objectRow of objectRows) {
             objectRow[step.name] = step.fn(objectRow, aggs);
           }
@@ -340,6 +365,16 @@ export class Engine<
       }
     }
 
+    // Upfront duplicate-name validation — fails before any mutation
+    const headerSet = new Set(headers);
+    for (const step of this.#steps) {
+      if (step.kind === "def") {
+        if (headerSet.has(step.name))
+          throw new Error(`Column "${step.name}" already exists in headers.`);
+        headerSet.add(step.name);
+      }
+    }
+
     const buildCols = (): Record<string, CellValue[]> => {
       const cols: Record<string, CellValue[]> = {};
       for (let c = 0; c < headers.length; c++) {
@@ -349,19 +384,20 @@ export class Engine<
     };
 
     const aggs: Record<string, CellValue | CellValue[]> = {};
+    let cols: Record<string, CellValue[]> | null = null;
+    const snapshot: Record<string, CellValue> = {};
 
     for (const step of this.#steps) {
       if (step.kind === "agg") {
-        aggs[step.name] = step.fn(buildCols(), aggs);
+        if (!cols) cols = buildCols();
+        aggs[step.name] = step.fn(cols, aggs);
       } else if (step.kind === "aggRow") {
-        aggs[step.name] = step.fn(buildCols(), aggs);
+        if (!cols) cols = buildCols();
+        aggs[step.name] = step.fn(cols, aggs);
       } else {
-        if (headers.includes(step.name)) {
-          throw new Error(`Column "${step.name}" already exists in headers.`);
-        }
+        cols = null;
         for (let i = 0; i < arrayRows.length; i++) {
           const row = arrayRows[i];
-          const snapshot: Record<string, CellValue> = {};
           for (let c = 0; c < headers.length; c++) {
             snapshot[headers[c]] = row[c];
           }
