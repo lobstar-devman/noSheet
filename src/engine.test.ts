@@ -300,3 +300,82 @@ describe("Engine.evaluate — headerless object-row overload", () => {
     }).toThrow('Column "cost" already exists');
   });
 });
+
+describe("BoundEngine — Engine.bind()", () => {
+  it("produces correct output on the first evaluate call", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[2], [4]];
+    new Engine<{ x: number[] }>()
+      .def("doubled", (row) => row.x * 2)
+      .bind(headers, rows)
+      .evaluate();
+
+    expect(col(headers, rows, "doubled")).toEqual([4, 8]);
+  });
+
+  it("second evaluate call is idempotent — does not double-append columns", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[3], [5]];
+    const ctx = new Engine<{ x: number[] }>()
+      .def("doubled", (row) => row.x * 2)
+      .bind(headers, rows);
+
+    ctx.evaluate();
+    ctx.evaluate();
+
+    expect(headers).toEqual(["x", "doubled"]);
+    expect(rows[0]).toEqual([3, 6]);
+    expect(rows[1]).toEqual([5, 10]);
+  });
+
+  it("re-evaluate reflects mutations to input cells", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[2], [4]];
+    const ctx = new Engine<{ x: number[] }>()
+      .def("doubled", (row) => row.x * 2)
+      .bind(headers, rows);
+
+    ctx.evaluate();
+    rows[0][0] = 10;
+    ctx.evaluate();
+
+    expect(col(headers, rows, "doubled")).toEqual([20, 8]);
+  });
+
+  it("works correctly with agg steps across multiple evaluate calls", () => {
+    const headers = ["amount"];
+    const rows: CellValue[][] = [[10], [20], [30]];
+    const ctx = new Engine<{ amount: number[] }>()
+      .agg("total", (cols) => cols.amount.reduce((a, b) => a + b, 0))
+      .def("share", (row, aggs) => row.amount / aggs.total)
+      .bind(headers, rows);
+
+    ctx.evaluate();
+    const shareIdx = headers.indexOf("share");
+    expect(rows[0][shareIdx]).toBeCloseTo(10 / 60);
+
+    rows[0][0] = 50; // change 10 → 50; new total = 100
+    ctx.evaluate();
+    expect(rows[0][headers.indexOf("share")]).toBeCloseTo(50 / 100);
+    expect(rows[1][headers.indexOf("share")]).toBeCloseTo(20 / 100);
+  });
+
+  it("throws at bind time when a row length mismatches headers", () => {
+    const headers = ["a", "b"];
+    expect(() => {
+      new Engine<{ a: number[]; b: number[] }>()
+        .bind(headers, [[1, 2], [3]]);
+    }).toThrow("does not match headers length");
+  });
+
+  it("throws at bind time when a def name duplicates an input column", () => {
+    const headers = ["cost"];
+    const rows: CellValue[][] = [[5]];
+    expect(() => {
+      new Engine<{ cost: number[] }>()
+        .def("cost", () => 0)
+        .bind(headers, rows);
+    }).toThrow('Column "cost" already exists');
+  });
+
+});

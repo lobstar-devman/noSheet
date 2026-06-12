@@ -407,4 +407,115 @@ export class Engine<
       }
     }
   }
+
+  /**
+   * Binds this engine to a specific table, performing all upfront validation once.
+   *
+   * Returns a {@link BoundEngine} whose `evaluate()` can be called repeatedly without
+   * re-passing the table. On each call, computed columns are truncated back to the
+   * input length in-place and re-evaluated — no row recreation needed between calls.
+   *
+   * @param headers - Column name array. Must match the length of every row.
+   * @param rows    - 2D row array. Held by reference; mutate cells between calls to
+   *                  re-evaluate with updated input data.
+   */
+  bind(headers: string[], rows: Val[][]): BoundEngine {
+    return new BoundEngine(this.#steps, headers, rows);
+  }
+}
+
+/**
+ * A computation engine pre-bound to a specific table.
+ *
+ * Obtained via {@link Engine.bind}. Validation (row lengths, duplicate column names)
+ * runs once at construction time. Each `evaluate()` call truncates computed columns
+ * back to the original input width in-place, then re-runs all steps — no row
+ * recreation, no re-validation.
+ *
+ * @example
+ * ```javascript
+ * const seeds = Array.from({ length: 1000 }, Math.random);
+ * const t = seeds.map(s => [s]);
+ *
+ * const ctx = new Engine()
+ *   .def('doubled', r => r.seed * 2)
+ *   .bind(['seed'], t);
+ *
+ * ctx.evaluate();          // t rows now have [seed, doubled]
+ * t[0][0] = 0.99;          // mutate a seed value
+ * ctx.evaluate();          // resets to [seed], recomputes — t[0] reflects new seed
+ * ```
+ * @beta
+ */
+export class BoundEngine {
+  readonly #steps: Step[];
+  readonly #headers: string[];
+  readonly #rows: CellValue[][];
+  readonly #inputColCount: number;
+  readonly #snapshot: Record<string, CellValue> = {};
+
+  constructor(steps: Step[], headers: string[], rows: CellValue[][]) {
+    for (const row of rows) {
+      if (row.length !== headers.length) {
+        throw new Error(
+          `Row length ${String(row.length)} does not match headers length ${String(headers.length)}.`,
+        );
+      }
+    }
+    const headerSet = new Set(headers);
+    for (const step of steps) {
+      if (step.kind === "def") {
+        if (headerSet.has(step.name))
+          throw new Error(`Column "${step.name}" already exists in headers.`);
+        headerSet.add(step.name);
+      }
+    }
+    this.#steps = steps;
+    this.#headers = headers;
+    this.#rows = rows;
+    this.#inputColCount = headers.length;
+  }
+
+  #buildCols(): Record<string, CellValue[]> {
+    const cols: Record<string, CellValue[]> = {};
+    for (let c = 0; c < this.#headers.length; c++) {
+      cols[this.#headers[c]] = this.#rows.map((row) => row[c]);
+    }
+    return cols;
+  }
+
+  /**
+   * Truncates computed columns from the previous call, then re-evaluates all steps
+   * against the bound table in-place.
+   */
+  evaluate(): void {
+    this.#headers.length = this.#inputColCount;
+    for (const row of this.#rows) {
+      row.length = this.#inputColCount;
+    }
+
+    const aggs: Record<string, CellValue | CellValue[]> = {};
+    const snapshot = this.#snapshot;
+    let cols: Record<string, CellValue[]> | null = null;
+
+    for (const step of this.#steps) {
+      if (step.kind === "agg") {
+        if (!cols) cols = this.#buildCols();
+        aggs[step.name] = step.fn(cols, aggs);
+      } else if (step.kind === "aggRow") {
+        if (!cols) cols = this.#buildCols();
+        aggs[step.name] = step.fn(cols, aggs);
+      } else {
+        cols = null;
+        for (let i = 0; i < this.#rows.length; i++) {
+          const row = this.#rows[i];
+          for (let c = 0; c < this.#headers.length; c++) {
+            snapshot[this.#headers[c]] = row[c];
+          }
+          row.push(step.fn(snapshot, aggs));
+        }
+        this.#headers.push(step.name);
+      }
+    }
+  }
 }

@@ -137,22 +137,20 @@ import {Engine} from "/no-sheet.esm.js"
             this.samples = [];
             clearInterval(this.timerId);
 
-            let e = new Engine(),
-                seeds = Array.from({ length: rows }, Math.random), // pre-generate seed values once
+            let headers = ['seed'],
+                t = Array.from({ length: rows }, _ => [Math.random()]),
                 f = 1/3;
 
-            e = e.def('i', () => this.iteration);
-
+            let e = new Engine().def('i', () => this.iteration);
             for(let i = 0; i < columns; i++){
-
-                e = e.def(`c${i}`, (r) => (r.seed  + i) / f);
+                e = e.def(`c${i}`, (r) => (r.seed + i) / f);
             }
+
+            const ctx = e.bind(headers, t);
 
             this.timerId = window.setTimeout(
                 (obj) => obj.calculate( _ => {
-                        // recreate rows each iteration so evaluate always starts with a clean 1-column table
-                        let t = seeds.map(s => [s]);
-                        e.evaluate(['seed'], t);
+                        ctx.evaluate();
                         this.iteration++;
                     },
                     max_samples
