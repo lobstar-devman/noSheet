@@ -23,7 +23,7 @@
     "api-extractor": "api-extractor run --local --verbose",
     "rollup": "rollup -c",
     "build": "rollup -c && api-extractor run --local --verbose",
-    "dev:watch": "rollup -c -w"
+    "dev:serve": "rollup -c -w"
   },
   "keywords": [
     "computation",

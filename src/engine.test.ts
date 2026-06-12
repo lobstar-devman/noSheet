@@ -269,8 +269,8 @@ describe("Engine.evaluate — headerless object-row overload", () => {
     ];
 
     new Engine<{ amount: number[] }>()
-      .agg("total", (cols) => cols.amount.reduce((a, b) => (a as number) + (b as number), 0))
-      .def("share", (row, aggs) => (row.amount as number) / (aggs.total as number))
+      .agg("total", (cols) => cols.amount.reduce((a, b) => a + b, 0))
+      .def("share", (row, aggs) => row.amount / aggs.total)
       .evaluate(rows);
 
     const asMap = rows as Array<Record<string, number>>;
@@ -283,8 +283,8 @@ describe("Engine.evaluate — headerless object-row overload", () => {
     const rows = [{ x: 3 }, { x: 4 }];
 
     new Engine<{ x: number[] }>()
-      .def("doubled", (row) => (row.x as number) * 2)
-      .def("tripled", (row) => (row.x as number) * 3)
+      .def("doubled", (row) => row.x * 2)
+      .def("tripled", (row) => row.x * 3)
       .evaluate(rows);
 
     expect(rows[0]).toMatchObject({ x: 3, doubled: 6, tripled: 9 });
