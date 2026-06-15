@@ -486,8 +486,12 @@ export class Engine<
    * @param rows    - 2D row array. Held by reference; mutate cells between calls to
    *                  re-evaluate with updated input data.
    */
-  bind(headers: string[], rows: Val[][]): BoundEngine {
-    return new BoundEngine(this.#steps, headers, rows);
+  bind(
+    headers: string[],
+    rows: Val[][],
+    aggs?: Record<string, CellValue | CellValue[]>,
+  ): BoundEngine {
+    return new BoundEngine(this.#steps, headers, rows, aggs);
   }
 }
 
@@ -520,19 +524,25 @@ export class BoundEngine {
   readonly #rows: CellValue[][];
   readonly #inputColCount: number;
   readonly #snapshot: Row;
-  #aggs: Record<string, CellValue | CellValue[]> = {};
+  readonly #aggsTarget: Record<string, CellValue | CellValue[]>;
   #rowIndex = 0;
   #currentStepName = "";
 
   /**
    * The aggregate values computed during the most recent `evaluate()` call.
    * Empty object before the first call. Keys match names passed to `.agg()` and `.aggRow()`.
+   * This is the same object reference passed to `bind()` as the third argument (if any).
    */
   get aggs(): Record<string, CellValue | CellValue[]> {
-    return this.#aggs;
+    return this.#aggsTarget;
   }
 
-  constructor(steps: Step[], headers: string[], rows: CellValue[][]) {
+  constructor(
+    steps: Step[],
+    headers: string[],
+    rows: CellValue[][],
+    aggsTarget?: Record<string, CellValue | CellValue[]>,
+  ) {
     for (const row of rows) {
       if (row.length !== headers.length) {
         throw new Error(
@@ -552,6 +562,7 @@ export class BoundEngine {
     this.#headers = headers;
     this.#rows = rows;
     this.#inputColCount = headers.length;
+    this.#aggsTarget = aggsTarget ?? {};
     this.#snapshot = {
       get: (
         offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
@@ -601,7 +612,7 @@ export class BoundEngine {
       row.length = this.#inputColCount;
     }
 
-    const aggs: Record<string, CellValue | CellValue[]> = {};
+    const aggs = this.#aggsTarget;
     const snapshot = this.#snapshot;
     let cols: Record<string, CellValue[]> | null = null;
 
@@ -625,7 +636,5 @@ export class BoundEngine {
         this.#headers.push(step.name);
       }
     }
-
-    this.#aggs = aggs;
   }
 }

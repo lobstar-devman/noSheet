@@ -412,6 +412,31 @@ describe("BoundEngine — Engine.bind()", () => {
     ctx.evaluate();
     expect(ctx.aggs["total"]).toBe(15);
   });
+
+  it("bind() with external aggs object writes results into it", () => {
+    const engine = new Engine<{ v: number[] }>()
+      .agg("total", (cols) => cols.v.reduce((a, b) => a + b, 0));
+
+    const aggs1: Record<string, CellValue | CellValue[]> = {};
+    const aggs2: Record<string, CellValue | CellValue[]> = {};
+
+    engine.bind(["v"], [[10], [20]], aggs1).evaluate();
+    engine.bind(["v"], [[1], [2], [3]], aggs2).evaluate();
+
+    expect(aggs1["total"]).toBe(30);
+    expect(aggs2["total"]).toBe(6);
+  });
+
+  it("external aggs object is the same reference as .aggs", () => {
+    const external: Record<string, CellValue | CellValue[]> = {};
+    const ctx = new Engine<{ x: number[] }>()
+      .agg("sum", (cols) => cols.x.reduce((a, b) => a + b, 0))
+      .bind(["x"], [[1], [2]], external);
+
+    ctx.evaluate();
+    expect(ctx.aggs).toBe(external);
+    expect(external["sum"]).toBe(3);
+  });
 });
 
 describe("row.get() — offset access", () => {
