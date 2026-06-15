@@ -453,6 +453,15 @@ export class BoundEngine {
   readonly #rows: CellValue[][];
   readonly #inputColCount: number;
   readonly #snapshot: Record<string, CellValue> = {};
+  #aggs: Record<string, CellValue | CellValue[]> = {};
+
+  /**
+   * The aggregate values computed during the most recent `evaluate()` call.
+   * Empty object before the first call. Keys match names passed to `.agg()` and `.aggRow()`.
+   */
+  get aggs(): Record<string, CellValue | CellValue[]> {
+    return this.#aggs;
+  }
 
   constructor(steps: Step[], headers: string[], rows: CellValue[][]) {
     for (const row of rows) {
@@ -517,5 +526,7 @@ export class BoundEngine {
         this.#headers.push(step.name);
       }
     }
+
+    this.#aggs = aggs;
   }
 }

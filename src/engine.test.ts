@@ -378,4 +378,38 @@ describe("BoundEngine — Engine.bind()", () => {
     }).toThrow('Column "cost" already exists');
   });
 
+  it("aggs is empty before first evaluate", () => {
+    const ctx = new Engine<{ x: number[] }>()
+      .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
+      .bind(["x"], [[1], [2]]);
+    expect(ctx.aggs).toEqual({});
+  });
+
+  it("aggs exposes scalar aggregates after evaluate", () => {
+    const headers = ["amount"];
+    const rows: CellValue[][] = [[10], [20], [30]];
+    const ctx = new Engine<{ amount: number[] }>()
+      .agg("total", (cols) => cols.amount.reduce((a, b) => a + b, 0))
+      .agg("count", (cols) => cols.amount.length)
+      .bind(headers, rows);
+
+    ctx.evaluate();
+    expect(ctx.aggs["total"]).toBe(60);
+    expect(ctx.aggs["count"]).toBe(3);
+  });
+
+  it("aggs updates on each re-evaluate when input data changes", () => {
+    const headers = ["v"];
+    const rows: CellValue[][] = [[1], [2], [3]];
+    const ctx = new Engine<{ v: number[] }>()
+      .agg("total", (cols) => cols.v.reduce((a, b) => a + b, 0))
+      .bind(headers, rows);
+
+    ctx.evaluate();
+    expect(ctx.aggs["total"]).toBe(6);
+
+    rows[0][0] = 10;
+    ctx.evaluate();
+    expect(ctx.aggs["total"]).toBe(15);
+  });
 });
