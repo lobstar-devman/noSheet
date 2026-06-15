@@ -9,6 +9,25 @@
 export type CellValue = number | string | bigint | boolean | object;
 
 /**
+ * Provides relative and filter-based access to sibling rows from within a `.def()` expression.
+ *
+ * - `get(offset)` — returns the row at `currentIndex + offset`, or `undefined` if out of bounds.
+ *   Rows *before* the current one will include the current step's computed value (already evaluated);
+ *   rows *at or after* the current one will not (not yet evaluated in this step).
+ * - `get(filter)` — scans all rows and returns the first one for which `filter` returns `true`,
+ *   or `undefined` if none match. The same partial-column rule applies per row.
+ *
+ * The returned snapshot is a plain object containing only columns available at the point
+ * where `.get` is called in the pipeline — it does not itself have a `.get` method.
+ *
+ * @beta
+ */
+export type RowGet = {
+  (offset: number): Record<string, CellValue> | undefined;
+  (filter: (row: Record<string, CellValue>) => boolean): Record<string, CellValue> | undefined;
+};
+
+/**
  * A snapshot of all columns available when an expression is evaluated.
  * Keys are column names; values are the cell value for the current row.
  *
@@ -17,9 +36,11 @@ export type CellValue = number | string | bigint | boolean | object;
  * before the current one. Later expression functions therefore have access to all
  * columns produced by earlier definitions.
  *
+ * The `.get` method provides access to sibling rows — see {@link RowGet}.
+ *
  * @beta
  */
-export type Row = Record<string, CellValue>;
+export type Row = Record<string, CellValue> & { get: RowGet };
 
 /**
  * An expression function. Receives a row snapshot and the current aggregate results,
@@ -29,7 +50,8 @@ export type Row = Record<string, CellValue>;
  * ```javascript
  * (row, aggs) => row.cost * row.quantity         // number, no aggs used
  * (row, aggs) => row.x / aggs.total              // references a scalar aggregate
- * (row, aggs) => aggs.rank[aggs.rank.indexOf(row.x)]  // references a per-row aggregate
+ * (row, aggs) => row.get(-1)?.x ?? 0            // previous row's x value
+ * (row, aggs) => row.get(r => r.id === row.id)  // filter-based sibling lookup
  * ```
  *
  * @beta

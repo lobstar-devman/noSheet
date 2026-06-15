@@ -1,5 +1,5 @@
-import type { CellValue, AggFn, AggRowFn } from "./expr.js";
-export type { CellValue, AggFn, AggRowFn };
+import type { CellValue, AggFn, AggRowFn, Row, RowGet } from "./expr.js";
+export type { CellValue, AggFn, AggRowFn, Row, RowGet };
 
 /**
  * Compiles an expression string into a reusable scope evaluator.
@@ -40,7 +40,7 @@ export type TableToRow<T extends Record<string, CellValue[]>> = {
 export type DefStep = {
   kind: "def";
   name: string;
-  fn: (row: Record<string, CellValue>, aggs: Record<string, CellValue | CellValue[]>) => CellValue;
+  fn: (row: Row, aggs: Record<string, CellValue | CellValue[]>) => CellValue;
 };
 
 /**
@@ -134,7 +134,7 @@ export class Engine<
    */
   def<Name extends string, V extends Val>(
     name: Name,
-    fn: (row: Cols & { [K in keyof Input]: Input[K][number] }, aggs: Aggs) => V,
+    fn: (row: Cols & { [K in keyof Input]: Input[K][number] } & { get: RowGet }, aggs: Aggs) => V,
   ): Engine<Input, Val, Cols & Record<Name, V>, Aggs>
   def<Name extends string>(
     name: Name,
@@ -292,6 +292,21 @@ export class Engine<
       };
 
       let cols: Record<string, CellValue[]> | null = null;
+      let rowIndex = 0;
+
+      const rowGet = (
+        offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
+      ): Record<string, CellValue> | undefined => {
+        if (typeof offsetOrFilter === "function") {
+          for (let i = 0; i < objectRows.length; i++) {
+            if (offsetOrFilter(objectRows[i])) return objectRows[i];
+          }
+          return undefined;
+        }
+        const target = rowIndex + offsetOrFilter;
+        if (target < 0 || target >= objectRows.length) return undefined;
+        return objectRows[target];
+      };
 
       for (const step of this.#steps) {
         if (step.kind === "agg") {
@@ -302,8 +317,10 @@ export class Engine<
           aggs[step.name] = step.fn(cols, aggs);
         } else {
           cols = null;
-          for (const objectRow of objectRows) {
-            objectRow[step.name] = step.fn(objectRow, aggs);
+          for (rowIndex = 0; rowIndex < objectRows.length; rowIndex++) {
+            const objectRow = objectRows[rowIndex];
+            const rowWithGet: Row = { ...objectRow, get: rowGet };
+            objectRow[step.name] = step.fn(rowWithGet, aggs);
           }
         }
       }
@@ -336,6 +353,21 @@ export class Engine<
       };
 
       let cols: Record<string, CellValue[]> | null = null;
+      let rowIndex = 0;
+
+      const rowGet = (
+        offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
+      ): Record<string, CellValue> | undefined => {
+        if (typeof offsetOrFilter === "function") {
+          for (let i = 0; i < objectRows.length; i++) {
+            if (offsetOrFilter(objectRows[i])) return objectRows[i];
+          }
+          return undefined;
+        }
+        const target = rowIndex + offsetOrFilter;
+        if (target < 0 || target >= objectRows.length) return undefined;
+        return objectRows[target];
+      };
 
       for (const step of this.#steps) {
         if (step.kind === "agg") {
@@ -346,8 +378,10 @@ export class Engine<
           aggs[step.name] = step.fn(cols, aggs);
         } else {
           cols = null;
-          for (const objectRow of objectRows) {
-            objectRow[step.name] = step.fn(objectRow, aggs);
+          for (rowIndex = 0; rowIndex < objectRows.length; rowIndex++) {
+            const objectRow = objectRows[rowIndex];
+            const rowWithGet: Row = { ...objectRow, get: rowGet };
+            objectRow[step.name] = step.fn(rowWithGet, aggs);
           }
           headers.push(step.name);
         }
@@ -385,7 +419,39 @@ export class Engine<
 
     const aggs: Record<string, CellValue | CellValue[]> = {};
     let cols: Record<string, CellValue[]> | null = null;
-    const snapshot: Record<string, CellValue> = {};
+    let rowIndex = 0;
+    let currentStepName = "";
+
+    const makeTargetSnapshot = (idx: number): Record<string, CellValue> => {
+      const targetRow = arrayRows[idx];
+      const result: Record<string, CellValue> = {};
+      const baseCount = headers.length;
+      for (let c = 0; c < baseCount && c < targetRow.length; c++) {
+        result[headers[c]] = targetRow[c];
+      }
+      // Rows already processed in this step have the current step's value appended.
+      if (idx < rowIndex && targetRow.length > baseCount) {
+        result[currentStepName] = targetRow[baseCount];
+      }
+      return result;
+    };
+
+    const rowGet = (
+      offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
+    ): Record<string, CellValue> | undefined => {
+      if (typeof offsetOrFilter === "function") {
+        for (let idx = 0; idx < arrayRows.length; idx++) {
+          const snap = makeTargetSnapshot(idx);
+          if (offsetOrFilter(snap)) return snap;
+        }
+        return undefined;
+      }
+      const target = rowIndex + offsetOrFilter;
+      if (target < 0 || target >= arrayRows.length) return undefined;
+      return makeTargetSnapshot(target);
+    };
+
+    const snapshotRow: Row = { get: rowGet };
 
     for (const step of this.#steps) {
       if (step.kind === "agg") {
@@ -395,13 +461,14 @@ export class Engine<
         if (!cols) cols = buildCols();
         aggs[step.name] = step.fn(cols, aggs);
       } else {
+        currentStepName = step.name;
         cols = null;
-        for (let i = 0; i < arrayRows.length; i++) {
-          const row = arrayRows[i];
+        for (rowIndex = 0; rowIndex < arrayRows.length; rowIndex++) {
+          const row = arrayRows[rowIndex];
           for (let c = 0; c < headers.length; c++) {
-            snapshot[headers[c]] = row[c];
+            snapshotRow[headers[c]] = row[c];
           }
-          row.push(step.fn(snapshot, aggs));
+          row.push(step.fn(snapshotRow, aggs));
         }
         headers.push(step.name);
       }
@@ -454,6 +521,8 @@ export class BoundEngine {
   readonly #inputColCount: number;
   readonly #snapshot: Record<string, CellValue> = {};
   #aggs: Record<string, CellValue | CellValue[]> = {};
+  #rowIndex = 0;
+  #currentStepName = "";
 
   /**
    * The aggregate values computed during the most recent `evaluate()` call.
@@ -483,6 +552,20 @@ export class BoundEngine {
     this.#headers = headers;
     this.#rows = rows;
     this.#inputColCount = headers.length;
+    this.#snapshot["get"] = (
+      offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
+    ): Record<string, CellValue> | undefined => {
+      if (typeof offsetOrFilter === "function") {
+        for (let idx = 0; idx < this.#rows.length; idx++) {
+          const snap = this.#makeTargetSnapshot(idx);
+          if (offsetOrFilter(snap)) return snap;
+        }
+        return undefined;
+      }
+      const target = this.#rowIndex + offsetOrFilter;
+      if (target < 0 || target >= this.#rows.length) return undefined;
+      return this.#makeTargetSnapshot(target);
+    };
   }
 
   #buildCols(): Record<string, CellValue[]> {
@@ -491,6 +574,19 @@ export class BoundEngine {
       cols[this.#headers[c]] = this.#rows.map((row) => row[c]);
     }
     return cols;
+  }
+
+  #makeTargetSnapshot(idx: number): Record<string, CellValue> {
+    const targetRow = this.#rows[idx];
+    const result: Record<string, CellValue> = {};
+    const baseCount = this.#headers.length;
+    for (let c = 0; c < baseCount && c < targetRow.length; c++) {
+      result[this.#headers[c]] = targetRow[c];
+    }
+    if (idx < this.#rowIndex && targetRow.length > baseCount) {
+      result[this.#currentStepName] = targetRow[baseCount];
+    }
+    return result;
   }
 
   /**
@@ -516,12 +612,13 @@ export class BoundEngine {
         aggs[step.name] = step.fn(cols, aggs);
       } else {
         cols = null;
-        for (let i = 0; i < this.#rows.length; i++) {
-          const row = this.#rows[i];
+        this.#currentStepName = step.name;
+        for (this.#rowIndex = 0; this.#rowIndex < this.#rows.length; this.#rowIndex++) {
+          const row = this.#rows[this.#rowIndex];
           for (let c = 0; c < this.#headers.length; c++) {
             snapshot[this.#headers[c]] = row[c];
           }
-          row.push(step.fn(snapshot, aggs));
+          row.push(step.fn(snapshot as Row, aggs));
         }
         this.#headers.push(step.name);
       }

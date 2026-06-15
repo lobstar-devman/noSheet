@@ -413,3 +413,106 @@ describe("BoundEngine — Engine.bind()", () => {
     expect(ctx.aggs["total"]).toBe(15);
   });
 });
+
+describe("row.get() — offset access", () => {
+  it("get(0) returns the current row", () => {
+    const { headers, rows } = toRows({ x: [10, 20, 30] });
+    new Engine<{ x: number[] }>()
+      .def("same", (row) => (row.get(0)?.["x"] ?? -1) as number)
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "same")).toEqual([10, 20, 30]);
+  });
+
+  it("get(-1) returns the previous row (including current step's value)", () => {
+    const { headers, rows } = toRows({ x: [1, 2, 3] });
+    new Engine<{ x: number[] }>()
+      .def("cumsum", (row) => row.x + ((row.get(-1)?.["cumsum"] ?? 0) as number))
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "cumsum")).toEqual([1, 3, 6]);
+  });
+
+  it("get(1) returns the next row without the current step's value", () => {
+    const { headers, rows } = toRows({ x: [10, 20, 30] });
+    new Engine<{ x: number[] }>()
+      .def("next_x", (row) => (row.get(1)?.["x"] ?? -1) as number)
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "next_x")).toEqual([20, 30, -1]);
+  });
+
+  it("get() returns undefined when offset is out of bounds", () => {
+    const { headers, rows } = toRows({ x: [5] });
+    new Engine<{ x: number[] }>()
+      .def("prev", (row) => (row.get(-1)?.["x"] ?? 99) as number)
+      .def("next", (row) => (row.get(1)?.["x"] ?? 88) as number)
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "prev")).toEqual([99]);
+    expect(col(headers, rows, "next")).toEqual([88]);
+  });
+
+  it("get(1) does not expose the current step's column on downstream rows", () => {
+    const { headers, rows } = toRows({ x: [1, 2, 3] });
+    new Engine<{ x: number[] }>()
+      .def("doubled", (row) => {
+        const next = row.get(1);
+        return next !== undefined && "doubled" in next ? 1 : 0;
+      })
+      .evaluate(headers, rows);
+    // No downstream row should have 'doubled' during this step
+    expect(col(headers, rows, "doubled")).toEqual([0, 0, 0]);
+  });
+});
+
+describe("row.get() — filter access", () => {
+  it("get(filter) returns the first row matching the predicate", () => {
+    const { headers, rows } = toRows({ id: [1, 2, 3], val: [10, 20, 30] });
+    new Engine<{ id: number[]; val: number[] }>()
+      .def("found", (row) => (row.get((r) => r["id"] === 2)?.["val"] ?? -1) as number)
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "found")).toEqual([20, 20, 20]);
+  });
+
+  it("get(filter) returns undefined when no row matches", () => {
+    const { headers, rows } = toRows({ x: [1, 2, 3] });
+    new Engine<{ x: number[] }>()
+      .def("found", (row) => (row.get((r) => r.x === 99) ? 1 : 0))
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "found")).toEqual([0, 0, 0]);
+  });
+});
+
+describe("row.get() — object-row path", () => {
+  it("get(-1) returns the previous row in headerless object path", () => {
+    const rows = [{ x: 1 }, { x: 2 }, { x: 3 }];
+    new Engine<{ x: number[] }>()
+      .def("cumsum", (row) => row.x + ((row.get(-1)?.["cumsum"] ?? 0) as number))
+      .evaluate(rows);
+    const asMap = rows as Array<Record<string, number>>;
+    expect(asMap.map((r) => r["cumsum"])).toEqual([1, 3, 6]);
+  });
+
+  it("get(filter) works in headerless object path", () => {
+    const rows = [{ id: 1, v: 10 }, { id: 2, v: 20 }, { id: 3, v: 30 }];
+    new Engine<{ id: number[]; v: number[] }>()
+      .def("ref", (row) => (row.get((r) => r["id"] === 2)?.["v"] ?? -1) as number)
+      .evaluate(rows);
+    const asMap = rows as Array<Record<string, number>>;
+    expect(asMap.map((r) => r["ref"])).toEqual([20, 20, 20]);
+  });
+});
+
+describe("row.get() — BoundEngine", () => {
+  it("get(-1) works in BoundEngine and accumulates correctly across re-evaluate", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[1], [2], [3]];
+    const ctx = new Engine<{ x: number[] }>()
+      .def("cumsum", (row) => row.x + ((row.get(-1)?.["cumsum"] ?? 0) as number))
+      .bind(headers, rows);
+
+    ctx.evaluate();
+    expect(col(headers, rows, "cumsum")).toEqual([1, 3, 6]);
+
+    rows[0][0] = 10;
+    ctx.evaluate();
+    expect(col(headers, rows, "cumsum")).toEqual([10, 12, 15]);
+  });
+});
