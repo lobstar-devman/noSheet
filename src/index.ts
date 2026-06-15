@@ -1,4 +1,4 @@
-export { Engine, BoundEngine } from "./engine.js";
+export { Engine, BoundEngine, EngineGroup } from "./engine.js";
 export type { TableToRow } from "./engine.js";
 
 // Row, ExprFn, AggFn, AggRowFn remain public for consumers who use applyDefinitions directly.

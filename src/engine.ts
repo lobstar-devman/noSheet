@@ -581,6 +581,11 @@ export class BoundEngine {
     };
   }
 
+  /** All columns in their current evaluated state — input columns plus any computed columns. */
+  get cols(): Record<string, CellValue[]> {
+    return this.#buildCols();
+  }
+
   #buildCols(): Record<string, CellValue[]> {
     const cols: Record<string, CellValue[]> = {};
     for (let c = 0; c < this.#headers.length; c++) {
@@ -635,6 +640,85 @@ export class BoundEngine {
         }
         this.#headers.push(step.name);
       }
+    }
+  }
+}
+
+/**
+ * Aggregates across a set of {@link BoundEngine} instances.
+ *
+ * Each `.agg()` / `.aggRow()` step receives:
+ * - `cols` — every column from every engine concatenated into one array per column name
+ * - `aggs` — per-engine aggregate values collected into arrays
+ *   (scalar values become `[v1, v2, …]`; array values are flat-concatenated),
+ *   plus any group-level aggregates already computed earlier in the chain
+ *
+ * Call each engine's own `evaluate()` before calling `engineGroup.evaluate()`.
+ *
+ * @beta
+ */
+export class EngineGroup {
+  readonly #engines: BoundEngine[];
+  readonly #steps: (AggStep | AggRowStep)[];
+  readonly #aggsTarget: Record<string, CellValue | CellValue[]>;
+
+  /**
+   * The aggregate values computed during the most recent `evaluate()` call.
+   * Empty before the first call. Keys match names passed to `.agg()` and `.aggRow()`.
+   * This is the same object reference passed as the second constructor argument (if any).
+   */
+  get aggs(): Record<string, CellValue | CellValue[]> {
+    return this.#aggsTarget;
+  }
+
+  constructor(engines: BoundEngine[], aggs?: Record<string, CellValue | CellValue[]>) {
+    this.#engines = engines;
+    this.#steps = [];
+    this.#aggsTarget = aggs ?? {};
+  }
+
+  /** Adds a scalar aggregate step over all engines' merged columns and aggregates. */
+  agg(name: string, fn: AggFn): this {
+    this.#steps.push({ kind: "agg", name, fn });
+    return this;
+  }
+
+  /** Adds a per-element aggregate step over all engines' merged columns and aggregates. */
+  aggRow(name: string, fn: AggRowFn): this {
+    this.#steps.push({ kind: "aggRow", name, fn });
+    return this;
+  }
+
+  /**
+   * Runs all group steps against the current state of the bound engines.
+   * Does NOT call `evaluate()` on each engine — the caller controls that.
+   */
+  evaluate(): void {
+    // Concatenate columns from every engine
+    const cols: Record<string, CellValue[]> = {};
+    for (const engine of this.#engines) {
+      for (const [name, values] of Object.entries(engine.cols)) {
+        cols[name] = name in cols ? cols[name].concat(values) : values.slice();
+      }
+    }
+
+    // Collect per-engine aggs: scalars → array, arrays → flat concat
+    const aggs: Record<string, CellValue | CellValue[]> = {};
+    for (const engine of this.#engines) {
+      for (const [name, value] of Object.entries(engine.aggs)) {
+        if (Array.isArray(value)) {
+          aggs[name] = name in aggs ? (aggs[name] as CellValue[]).concat(value) : value.slice();
+        } else {
+          aggs[name] = name in aggs ? (aggs[name] as CellValue[]).concat([value]) : [value];
+        }
+      }
+    }
+
+    // Run group steps; each result is added to aggs and written to the target
+    for (const step of this.#steps) {
+      const result = step.kind === "agg" ? step.fn(cols, aggs) : step.fn(cols, aggs);
+      aggs[step.name] = result;
+      this.#aggsTarget[step.name] = result;
     }
   }
 }

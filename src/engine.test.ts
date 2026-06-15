@@ -1,5 +1,5 @@
 import type { CellValue } from "./expr.js";
-import { Engine } from "./engine.js";
+import { Engine, EngineGroup } from "./engine.js";
 
 // Helper: build headers + rows from a column-keyed object for test readability.
 function toRows(data: Record<string, CellValue[]>): { headers: string[]; rows: CellValue[][] } {
@@ -539,5 +539,83 @@ describe("row.get() — BoundEngine", () => {
     rows[0][0] = 10;
     ctx.evaluate();
     expect(col(headers, rows, "cumsum")).toEqual([10, 12, 15]);
+  });
+});
+
+describe("EngineGroup", () => {
+  // Shared engine: line_cost per row, total_cost as scalar agg
+  const invoiceEngine = new Engine<{ cost: number[]; qty: number[] }>()
+    .def("line_cost", (r) => r.cost * r.qty)
+    .agg("total_cost", (cols) => (cols.line_cost as number[]).reduce((a, b) => a + b, 0));
+
+  it("grand_total sums per-engine scalar aggs into an array then reduces", () => {
+    // invoice1: 10*2 + 20*3 = 80, invoice2: 5*4 + 15*1 = 35
+    const aggs1: Record<string, CellValue | CellValue[]> = {};
+    const aggs2: Record<string, CellValue | CellValue[]> = {};
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]], aggs1);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]], aggs2);
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const groupAggs: Record<string, CellValue | CellValue[]> = {};
+    new EngineGroup([inv1, inv2], groupAggs)
+      .agg("grand_total", (_, aggs) =>
+        (aggs["total_cost"] as number[]).reduce((a, b) => a + b, 0),
+      )
+      .evaluate();
+
+    expect(aggs1["total_cost"]).toBe(80);
+    expect(aggs2["total_cost"]).toBe(35);
+    expect(groupAggs["grand_total"]).toBe(115);
+  });
+
+  it("all_cols concatenates column data from all engines", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]);
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const groupAggs: Record<string, CellValue | CellValue[]> = {};
+    new EngineGroup([inv1, inv2], groupAggs)
+      .agg("total_qty", (cols) => (cols["qty"] as number[]).reduce((a, b) => a + b, 0))
+      .agg("total_lines", (cols) => cols["qty"].length)
+      .evaluate();
+
+    expect(groupAggs["total_qty"]).toBe(10);  // 2+3+4+1
+    expect(groupAggs["total_lines"]).toBe(4); // 2 rows × 2 invoices
+  });
+
+  it("later group steps can reference earlier group step results", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[20, 3]]);
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const groupAggs: Record<string, CellValue | CellValue[]> = {};
+    new EngineGroup([inv1, inv2], groupAggs)
+      .agg("grand_total", (_, aggs) =>
+        (aggs["total_cost"] as number[]).reduce((a, b) => a + b, 0),
+      )
+      .agg("avg_invoice", (_, aggs) => (aggs["grand_total"] as number) / 2)
+      .evaluate();
+
+    expect(groupAggs["grand_total"]).toBe(80); // 20 + 60
+    expect(groupAggs["avg_invoice"]).toBe(40);
+  });
+
+  it("group.aggs is the same reference as the external object", () => {
+    const external: Record<string, CellValue | CellValue[]> = {};
+    const inv = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
+    inv.evaluate();
+    const group = new EngineGroup([inv], external).agg("g", (_, aggs) => aggs["total_cost"]);
+    group.evaluate();
+    expect(group.aggs).toBe(external);
+  });
+
+  it("BoundEngine.cols exposes all computed columns after evaluate", () => {
+    const inv = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    inv.evaluate();
+    expect(inv.cols["line_cost"]).toEqual([20, 60]);
+    expect(inv.cols["cost"]).toEqual([10, 20]);
   });
 });
