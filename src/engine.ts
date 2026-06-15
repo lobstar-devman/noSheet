@@ -519,7 +519,7 @@ export class BoundEngine {
   readonly #headers: string[];
   readonly #rows: CellValue[][];
   readonly #inputColCount: number;
-  readonly #snapshot: Record<string, CellValue> = {};
+  readonly #snapshot: Row;
   #aggs: Record<string, CellValue | CellValue[]> = {};
   #rowIndex = 0;
   #currentStepName = "";
@@ -552,19 +552,21 @@ export class BoundEngine {
     this.#headers = headers;
     this.#rows = rows;
     this.#inputColCount = headers.length;
-    this.#snapshot["get"] = (
-      offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
-    ): Record<string, CellValue> | undefined => {
-      if (typeof offsetOrFilter === "function") {
-        for (let idx = 0; idx < this.#rows.length; idx++) {
-          const snap = this.#makeTargetSnapshot(idx);
-          if (offsetOrFilter(snap)) return snap;
+    this.#snapshot = {
+      get: (
+        offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
+      ): Record<string, CellValue> | undefined => {
+        if (typeof offsetOrFilter === "function") {
+          for (let idx = 0; idx < this.#rows.length; idx++) {
+            const snap = this.#makeTargetSnapshot(idx);
+            if (offsetOrFilter(snap)) return snap;
+          }
+          return undefined;
         }
-        return undefined;
-      }
-      const target = this.#rowIndex + offsetOrFilter;
-      if (target < 0 || target >= this.#rows.length) return undefined;
-      return this.#makeTargetSnapshot(target);
+        const target = this.#rowIndex + offsetOrFilter;
+        if (target < 0 || target >= this.#rows.length) return undefined;
+        return this.#makeTargetSnapshot(target);
+      },
     };
   }
 
@@ -618,7 +620,7 @@ export class BoundEngine {
           for (let c = 0; c < this.#headers.length; c++) {
             snapshot[this.#headers[c]] = row[c];
           }
-          row.push(step.fn(snapshot as Row, aggs));
+          row.push(step.fn(snapshot, aggs));
         }
         this.#headers.push(step.name);
       }
