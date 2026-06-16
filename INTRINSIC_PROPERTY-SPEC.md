@@ -17,22 +17,4 @@ The most important rule to observe is that any implementation doesn't mask the n
     .def("packing_list", (r) => `item ${r.index()} of ${r.count()}: qty ${r.qty}`);
  ```
 
- # Current column index
-
- The current column index might be used as in the example shown below
-
- ```js
-    let columns = 10,
-        e = new Engine().def('seed', () => Math.random());
-
-    for(let i = 0; i < columns; i++){
-        e = e.def(`c${i}`, (r) => (r.seed + i) / f);
-    }
-
-    for(let i = 1; i < columns; i++){
-        e = e.def( 'sum_previous_column', (r) => r[`c${i-1}`] + r[`c${i}`]);
-    }
-
-```        
-
 Please Note: All examples supplied are javascript pseudocode and as such are untested.
