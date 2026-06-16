@@ -30,7 +30,7 @@ Statements like the
 
 the RowGet implementation within .def functions of the GroupEngine should work as currently implemented.
 
-## donor BoundEngine — intrinsic row/column metadata"
+## donor BoundEngine — intrinsic row/column metadata
 
 As with donor tables rows BoundEngines also have intrinsic scalar properties of engineIndex and engineCount
   
