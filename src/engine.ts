@@ -561,6 +561,7 @@ export class BoundEngine {
   readonly #snapshot: Row;
   readonly #meta: RowMeta;
   readonly #aggsTarget: Record<string, CellValue | CellValue[]>;
+  #ownWidth: number;
   #rowIndex = 0;
   #currentStepName = "";
 
@@ -599,6 +600,7 @@ export class BoundEngine {
     this.#rows = rows;
     this.#inputColCount = headers.length;
     this.#aggsTarget = aggsTarget ?? {};
+    this.#ownWidth = headers.length;
     this.#meta = { rowIndex: 0, rowCount: rows.length, defOffset: 0, colIndex: headers.length };
     this.#snapshot = {
       get: (
@@ -621,6 +623,11 @@ export class BoundEngine {
   /** All columns in their current evaluated state — input columns plus any computed columns. */
   get cols(): Record<string, CellValue[]> {
     return this.#buildCols();
+  }
+
+  /** The number of rows in the bound table. */
+  get rowCount(): number {
+    return this.#rows.length;
   }
 
   #buildCols(): Record<string, CellValue[]> {
@@ -685,17 +692,170 @@ export class BoundEngine {
         defOffset++;
       }
     }
+
+    this.#ownWidth = this.#headers.length;
+  }
+
+  /**
+   * Truncates any columns appended by a previous {@link EngineGroup} pass, restoring
+   * this engine's own evaluated width. Idempotent — safe to call even if nothing
+   * was appended. Used internally by `EngineGroup.evaluate()`.
+   */
+  resetGroupColumns(): void {
+    if (this.#headers.length > this.#ownWidth) {
+      this.#headers.length = this.#ownWidth;
+      for (const row of this.#rows) {
+        row.length = this.#ownWidth;
+      }
+    }
+  }
+
+  /**
+   * Appends one column on top of this engine's own evaluated columns, one row at a time.
+   * Does not truncate first — call {@link resetGroupColumns} once before a batch of
+   * `appendColumn` calls to clear any columns left over from a previous pass.
+   * Used internally by `EngineGroup.evaluate()` to implement group-level `.def()` steps.
+   *
+   * @throws `{Error}` if `name` already exists in the current headers.
+   */
+  appendColumn(
+    name: string,
+    computeValue: (row: Row, rowIndex: number, rowCount: number, colIndex: number) => CellValue,
+  ): void {
+    if (this.#headers.includes(name)) {
+      throw new Error(`Column "${name}" already exists in headers.`);
+    }
+    const snapshot = this.#snapshot;
+    const colIndex = this.#headers.length;
+    const rowCount = this.#rows.length;
+    this.#currentStepName = name;
+    for (this.#rowIndex = 0; this.#rowIndex < rowCount; this.#rowIndex++) {
+      const row = this.#rows[this.#rowIndex];
+      for (let c = 0; c < this.#headers.length; c++) {
+        snapshot[this.#headers[c]] = row[c];
+      }
+      row.push(computeValue(snapshot, this.#rowIndex, rowCount, colIndex));
+    }
+    this.#headers.push(name);
   }
 }
 
+// ── EngineGroup ───────────────────────────────────────────────────────────────
+
 /**
- * Aggregates across a set of {@link BoundEngine} instances.
+ * Absolute-index sibling-row access for a {@link BoundEngine} reached through
+ * {@link EngineAccessor}. Unlike {@link RowGet} (relative to the current row),
+ * `0` here always means the target engine's first row — there's no "current row"
+ * that carries across engines with potentially different row counts.
  *
- * Each `.agg()` / `.aggRow()` step receives:
- * - `cols` — every column from every engine concatenated into one array per column name
- * - `aggs` — per-engine aggregate values collected into arrays
- *   (scalar values become `[v1, v2, …]`; array values are flat-concatenated),
- *   plus any group-level aggregates already computed earlier in the chain
+ * @beta
+ */
+export type AbsoluteRowGet = (
+  indexOrFilter: number | ((row: Record<string, CellValue>) => boolean),
+) => Record<string, CellValue> | undefined;
+
+/**
+ * Reaches a sibling {@link BoundEngine} within the same {@link EngineGroup}, relative
+ * to the engine whose row is currently being processed by a `.def()` step
+ * (`0` = itself, `-1` = the previous engine, `1` = the next one).
+ * Returns `undefined` if `offset` is out of range.
+ *
+ * @example
+ * ```javascript
+ * row.engine(-1)?.get(0)              // first row of the previous engine's donor table
+ * row.engine(1)?.aggs.an_aggregate    // an_aggregate from the next engine's donor aggregate
+ * ```
+ *
+ * @beta
+ */
+export type EngineAccessor = (
+  offset: number,
+) => { get: AbsoluteRowGet; aggs: Record<string, CellValue | CellValue[]> } | undefined;
+
+/**
+ * The row snapshot passed to an {@link EngineGroup.def} expression: the usual {@link Row}
+ * (same-engine `.get()` works exactly as it does for a plain `Engine`/`BoundEngine`),
+ * plus `.engine()` for reaching sibling engines in the group.
+ *
+ * @beta
+ */
+export type GroupRow = Row & { engine: EngineAccessor };
+
+/**
+ * Intrinsic metadata passed to an {@link EngineGroup.def} expression — {@link RowMeta}'s
+ * row/column fields (scoped to the engine currently being processed), plus the engine's
+ * own position and the total number of engines in the group.
+ *
+ * @beta
+ */
+export type GroupRowMeta = RowMeta & {
+  engineIndex: number;
+  engineCount: number;
+};
+
+/**
+ * @beta
+ */
+export type GroupDefFn = (
+  row: GroupRow,
+  aggs: Record<string, CellValue | CellValue[]>,
+  meta: GroupRowMeta,
+) => CellValue;
+
+type GroupDefStep = { kind: "groupDef"; name: string; fn: GroupDefFn };
+type GroupAggStep = { kind: "groupAgg"; name: string; fn: AggFn };
+type GroupAggRowStep = { kind: "groupAggRow"; name: string; fn: AggRowFn };
+type EngineGroupStep = AggStep | AggRowStep | GroupDefStep | GroupAggStep | GroupAggRowStep;
+
+function makeEngineHandle(
+  target: BoundEngine,
+): { get: AbsoluteRowGet; aggs: Record<string, CellValue | CellValue[]> } {
+  const get: AbsoluteRowGet = (
+    indexOrFilter: number | ((row: Record<string, CellValue>) => boolean),
+  ): Record<string, CellValue> | undefined => {
+    const cols = target.cols;
+    const rowCount = target.rowCount;
+    const buildAt = (idx: number): Record<string, CellValue> => {
+      const r: Record<string, CellValue> = {};
+      for (const [name, values] of Object.entries(cols)) r[name] = values[idx];
+      return r;
+    };
+    if (typeof indexOrFilter === "function") {
+      for (let i = 0; i < rowCount; i++) {
+        const r = buildAt(i);
+        if (indexOrFilter(r)) return r;
+      }
+      return undefined;
+    }
+    if (indexOrFilter < 0 || indexOrFilter >= rowCount) return undefined;
+    return buildAt(indexOrFilter);
+  };
+  return { get, aggs: target.aggs };
+}
+
+/**
+ * Aggregates across a set of {@link BoundEngine} instances that share the same
+ * originating `Engine`.
+ *
+ * - `.agg(name, (cols, aggs) => scalar)` / `.aggRow(name, (cols, aggs) => array)` —
+ *   unchanged from before: `cols` is every column from every engine's donor table
+ *   concatenated into one array per column name; `aggs` holds per-engine aggregate
+ *   values collected into arrays (scalar values become `[v1, v2, …]`; array values
+ *   are flat-concatenated), plus any group-level aggregate already computed earlier
+ *   in the chain.
+ *
+ * - `.groupAgg(name, (aggCols, aggs) => scalar)` / `.groupAggRow(name, (aggCols, aggs) => array)` —
+ *   like `.agg()` / `.aggRow()`, but `aggCols` is *only* the per-engine collected
+ *   donor-aggregate table described above (no row-level `cols` mixed in) — i.e. "run
+ *   an aggregate over the array of donor aggregates as if it were a donor table."
+ *
+ * - `.def(name, (row, aggs, meta) => value)` — appends one column to *every* engine's
+ *   own donor table, one row at a time, run after each engine's own `evaluate()` has
+ *   already completed. `row` is the usual same-engine row snapshot plus `row.engine(offset)`
+ *   for reaching sibling engines (see {@link EngineAccessor}); `aggs` is the group's own
+ *   running aggregate map (the same one `.agg()` / `.groupAgg()` write into — to read the
+ *   *current* engine's own donor aggregate, use `row.engine(0).aggs`); `meta` adds
+ *   `engineIndex` / `engineCount` to {@link RowMeta}.
  *
  * Call each engine's own `evaluate()` before calling `engineGroup.evaluate()`.
  *
@@ -703,12 +863,13 @@ export class BoundEngine {
  */
 export class EngineGroup {
   readonly #engines: BoundEngine[];
-  readonly #steps: (AggStep | AggRowStep)[];
+  readonly #steps: EngineGroupStep[];
   readonly #aggsTarget: Record<string, CellValue | CellValue[]>;
 
   /**
    * The aggregate values computed during the most recent `evaluate()` call.
-   * Empty before the first call. Keys match names passed to `.agg()` and `.aggRow()`.
+   * Empty before the first call. Keys match names passed to `.agg()`, `.aggRow()`,
+   * `.groupAgg()`, and `.groupAggRow()`.
    * This is the same object reference passed as the second constructor argument (if any).
    */
   get aggs(): Record<string, CellValue | CellValue[]> {
@@ -719,6 +880,12 @@ export class EngineGroup {
     this.#engines = engines;
     this.#steps = [];
     this.#aggsTarget = aggs ?? {};
+  }
+
+  /** Appends a column to every engine's own donor table — see the class-level doc for details. */
+  def(name: string, fn: GroupDefFn): this {
+    this.#steps.push({ kind: "groupDef", name, fn });
+    return this;
   }
 
   /** Adds a scalar aggregate step over all engines' merged columns and aggregates. */
@@ -733,36 +900,104 @@ export class EngineGroup {
     return this;
   }
 
+  /** Adds a scalar aggregate step over the per-engine collected donor-aggregate table. */
+  groupAgg(name: string, fn: AggFn): this {
+    this.#steps.push({ kind: "groupAgg", name, fn });
+    return this;
+  }
+
+  /** Adds a per-engine aggregate step over the per-engine collected donor-aggregate table. */
+  groupAggRow(name: string, fn: AggRowFn): this {
+    this.#steps.push({ kind: "groupAggRow", name, fn });
+    return this;
+  }
+
   /**
    * Runs all group steps against the current state of the bound engines.
    * Does NOT call `evaluate()` on each engine — the caller controls that.
+   *
+   * @throws `{Error}` if a `.def()` name already exists in any engine's headers.
    */
   evaluate(): void {
-    // Concatenate columns from every engine
-    const cols: Record<string, CellValue[]> = {};
-    for (const engine of this.#engines) {
-      for (const [name, values] of Object.entries(engine.cols)) {
-        cols[name] = name in cols ? cols[name].concat(values) : values.slice();
-      }
-    }
+    for (const engine of this.#engines) engine.resetGroupColumns();
 
-    // Collect per-engine aggs: scalars → array, arrays → flat concat
-    const aggs: Record<string, CellValue | CellValue[]> = {};
+    // Collect per-engine aggs: scalars → array, arrays → flat concat. Frozen for
+    // the duration of this call — used as the donor-aggregate table for groupAgg/groupAggRow.
+    const aggCols: Record<string, CellValue[]> = {};
     for (const engine of this.#engines) {
       for (const [name, value] of Object.entries(engine.aggs)) {
         if (Array.isArray(value)) {
-          aggs[name] = name in aggs ? (aggs[name] as CellValue[]).concat(value) : value.slice();
+          const arr = value as CellValue[];
+          aggCols[name] = name in aggCols ? aggCols[name].concat(arr) : arr.slice();
         } else {
-          aggs[name] = name in aggs ? (aggs[name] as CellValue[]).concat([value]) : [value];
+          aggCols[name] = name in aggCols ? aggCols[name].concat([value]) : [value];
         }
       }
     }
 
-    // Run group steps; each result is added to aggs and written to the target
+    const aggs: Record<string, CellValue | CellValue[]> = { ...aggCols };
+
+    // Upfront duplicate-name validation for .def() steps — fails before any mutation
+    const headerSets = this.#engines.map((engine) => new Set(Object.keys(engine.cols)));
     for (const step of this.#steps) {
-      const result = step.kind === "agg" ? step.fn(cols, aggs) : step.fn(cols, aggs);
-      aggs[step.name] = result;
-      this.#aggsTarget[step.name] = result;
+      if (step.kind === "groupDef") {
+        for (const headerSet of headerSets) {
+          if (headerSet.has(step.name)) {
+            throw new Error(`Column "${step.name}" already exists in an engine's headers.`);
+          }
+          headerSet.add(step.name);
+        }
+      }
+    }
+
+    let cols: Record<string, CellValue[]> | null = null;
+    const buildCols = (): Record<string, CellValue[]> => {
+      const merged: Record<string, CellValue[]> = {};
+      for (const engine of this.#engines) {
+        for (const [name, values] of Object.entries(engine.cols)) {
+          merged[name] = name in merged ? merged[name].concat(values) : values.slice();
+        }
+      }
+      return merged;
+    };
+
+    let defOffset = 0;
+    for (const step of this.#steps) {
+      if (step.kind === "agg" || step.kind === "aggRow") {
+        if (!cols) cols = buildCols();
+        const result = step.fn(cols, aggs);
+        aggs[step.name] = result;
+        this.#aggsTarget[step.name] = result;
+      } else if (step.kind === "groupAgg" || step.kind === "groupAggRow") {
+        const result = step.fn(aggCols, aggs);
+        aggs[step.name] = result;
+        this.#aggsTarget[step.name] = result;
+      } else {
+        cols = null; // row-level data is about to change; invalidate the merged-cols cache
+        this.#runGroupDef(step, aggs, defOffset);
+        defOffset++;
+      }
+    }
+  }
+
+  #runGroupDef(
+    step: GroupDefStep,
+    aggs: Record<string, CellValue | CellValue[]>,
+    defOffset: number,
+  ): void {
+    const engines = this.#engines;
+    const engineCount = engines.length;
+    for (let engineIndex = 0; engineIndex < engineCount; engineIndex++) {
+      const accessor: EngineAccessor = (offset) => {
+        const targetIdx = engineIndex + offset;
+        if (targetIdx < 0 || targetIdx >= engineCount) return undefined;
+        return makeEngineHandle(engines[targetIdx]);
+      };
+      engines[engineIndex].appendColumn(step.name, (row, rowIndex, rowCount, colIndex) => {
+        const groupRow: GroupRow = { ...row, engine: accessor };
+        const meta: GroupRowMeta = { rowIndex, rowCount, defOffset, colIndex, engineIndex, engineCount };
+        return step.fn(groupRow, aggs, meta);
+      });
     }
   }
 }

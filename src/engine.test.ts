@@ -683,4 +683,154 @@ describe("EngineGroup", () => {
     expect(inv.cols["line_cost"]).toEqual([20, 60]);
     expect(inv.cols["cost"]).toEqual([10, 20]);
   });
+
+  it("groupAgg treats the per-engine collected aggregate table as the donor table", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost = 80
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]); // total_cost = 35
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const groupAggs: Record<string, CellValue | CellValue[]> = {};
+    new EngineGroup([inv1, inv2], groupAggs)
+      .groupAgg(
+        "avg_total_cost",
+        (aggCols) =>
+          (aggCols["total_cost"] as number[]).reduce((a, b) => a + b, 0) /
+          aggCols["total_cost"].length,
+      )
+      .evaluate();
+
+    expect(groupAggs["avg_total_cost"]).toBe(57.5); // (80 + 35) / 2
+  });
+
+  it("groupAggRow computes one value per engine, indexable by engineIndex", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost = 80
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]); // total_cost = 35
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const groupAggs: Record<string, CellValue | CellValue[]> = {};
+    new EngineGroup([inv1, inv2], groupAggs)
+      .groupAgg("grand_total", (aggCols) =>
+        (aggCols["total_cost"] as number[]).reduce((a, b) => a + b, 0),
+      )
+      .groupAggRow("share", (aggCols, aggs) =>
+        (aggCols["total_cost"] as number[]).map((v) => v / (aggs["grand_total"] as number)),
+      )
+      .evaluate();
+
+    expect(groupAggs["grand_total"]).toBe(115);
+    expect(groupAggs["share"]).toEqual([80 / 115, 35 / 115]);
+  });
+
+  describe("EngineGroup.def()", () => {
+    it("appends a column to every engine's own donor table", () => {
+      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+      const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
+      inv1.evaluate();
+      inv2.evaluate();
+
+      new EngineGroup([inv1, inv2])
+        .def("tag", (_row, _aggs, meta) => `e${String(meta.engineIndex)}-r${String(meta.rowIndex)}`)
+        .evaluate();
+
+      expect(inv1.cols["tag"]).toEqual(["e0-r0", "e0-r1"]);
+      expect(inv2.cols["tag"]).toEqual(["e1-r0"]);
+    });
+
+    it("meta.engineCount reflects the total number of engines in the group", () => {
+      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
+      const inv2 = invoiceEngine.bind(["cost", "qty"], [[20, 3]]);
+      inv1.evaluate();
+      inv2.evaluate();
+
+      new EngineGroup([inv1, inv2])
+        .def("engineCount", (_row, _aggs, meta) => meta.engineCount)
+        .evaluate();
+
+      expect(inv1.cols["engineCount"]).toEqual([2]);
+      expect(inv2.cols["engineCount"]).toEqual([2]);
+    });
+
+    it("row.engine(offset).get(n) reads an absolute row from a sibling engine's table", () => {
+      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+      const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
+      inv1.evaluate();
+      inv2.evaluate();
+
+      new EngineGroup([inv1, inv2])
+        .def("prevFirstCost", (row) => row.engine(-1)?.get(0)?.["cost"] ?? -1)
+        .evaluate();
+
+      expect(inv1.cols["prevFirstCost"]).toEqual([-1, -1]); // no engine before inv1
+      expect(inv2.cols["prevFirstCost"]).toEqual([10]); // inv1's first row's cost
+    });
+
+    it("row.engine(offset).aggs reads a sibling engine's donor aggregate", () => {
+      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost = 80
+      const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
+      inv1.evaluate();
+      inv2.evaluate();
+
+      new EngineGroup([inv1, inv2])
+        .def("prevTotal", (row) => row.engine(-1)?.aggs["total_cost"] ?? -1)
+        .evaluate();
+
+      expect(inv1.cols["prevTotal"]).toEqual([-1, -1]);
+      expect(inv2.cols["prevTotal"]).toEqual([80]);
+    });
+
+    it("aggs inside .def() is the group's running map, not the current engine's own aggs", () => {
+      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]); // total_cost = 20
+      inv1.evaluate();
+
+      const groupAggs: Record<string, CellValue | CellValue[]> = {};
+      new EngineGroup([inv1], groupAggs)
+        .groupAgg("grand_total", (aggCols) => (aggCols["total_cost"] as number[])[0])
+        .def("seenGrandTotal", (_row, aggs) => aggs["grand_total"])
+        .evaluate();
+
+      expect(inv1.cols["seenGrandTotal"]).toEqual([20]);
+    });
+
+    it("a later .agg() sees columns appended by an earlier group .def()", () => {
+      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
+      const inv2 = invoiceEngine.bind(["cost", "qty"], [[20, 3]]);
+      inv1.evaluate();
+      inv2.evaluate();
+
+      const groupAggs: Record<string, CellValue | CellValue[]> = {};
+      new EngineGroup([inv1, inv2], groupAggs)
+        .def("flag", () => 1)
+        .agg("flag_sum", (cols) => (cols["flag"] as number[]).reduce((a, b) => a + b, 0))
+        .evaluate();
+
+      expect(groupAggs["flag_sum"]).toBe(2);
+    });
+
+    it("repeated evaluate() calls are idempotent without re-running each engine's own evaluate()", () => {
+      const inv = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+      inv.evaluate();
+
+      const group = new EngineGroup([inv]).def("flag", (_row, _aggs, meta) => meta.rowIndex);
+      group.evaluate();
+      group.evaluate();
+
+      expect(inv.cols["flag"]).toEqual([0, 1]);
+      expect(Object.keys(inv.cols)).toEqual(["cost", "qty", "line_cost", "flag"]);
+    });
+
+    it("throws when a .def() name collides with any engine's headers, before mutating any engine", () => {
+      const e1 = new Engine<{ x: number[] }>().def("dup", (r) => r.x).bind(["x"], [[1]]);
+      const e2 = new Engine<{ x: number[] }>().bind(["x"], [[2]]);
+      e1.evaluate();
+      e2.evaluate();
+
+      const group = new EngineGroup([e1, e2]).def("dup", () => 99);
+      expect(() => {
+        group.evaluate();
+      }).toThrow('Column "dup" already exists');
+      expect(Object.keys(e2.cols)).not.toContain("dup");
+    });
+  });
 });
