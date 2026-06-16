@@ -1,6 +1,6 @@
 # Library Specification
 
-This document is the normative specification for `no-sheet`, a TypeScript library that
+This document is the normative specification for `nosheet`, a TypeScript library that
 applies named expressions and aggregates to tabular data. It is written so that the
 library can be re-implemented from scratch using this file alone — every type, method,
 algorithm, validation rule, and error message a from-scratch implementation needs is

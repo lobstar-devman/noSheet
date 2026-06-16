@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Agent guidance for the `no-sheet` repository.
+Agent guidance for the `nosheet` repository.
 
 ## Repository Overview
 
-`no-sheet` is a TypeScript library for applying named row expressions and aggregates to
+`nosheet` is a TypeScript library for applying named row expressions and aggregates to
 tabular data. Expressions are plain arrow functions, not string formulas — no parsing, no
 `eval`. Two API layers:
 

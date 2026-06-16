@@ -1,12 +1,12 @@
 {
-  "name": "no-sheet",
+  "name": "nosheet",
   "version": "0.1.0",
   "description": "A programmatic computation engine library. Computations are defined in code — not as string expressions or spreadsheet-style formulas.",
   "types": "dist/index.d.ts",
   "main": "dist/index.js",
   "type": "module",
-  "module": "dist/no-sheet.esm.js",
-  "browser": "dist/no-sheet.umd.js",
+  "module": "dist/nosheet.esm.js",
+  "browser": "dist/nosheet.umd.js",
   "files": [
     "dist"
   ],
