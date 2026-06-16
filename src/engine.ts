@@ -1,5 +1,5 @@
-import type { CellValue, AggFn, AggRowFn, Row, RowGet } from "./expr.js";
-export type { CellValue, AggFn, AggRowFn, Row, RowGet };
+import type { CellValue, AggFn, AggRowFn, Row, RowGet, RowMeta } from "./expr.js";
+export type { CellValue, AggFn, AggRowFn, Row, RowGet, RowMeta };
 
 /**
  * Compiles an expression string into a reusable scope evaluator.
@@ -40,7 +40,7 @@ export type TableToRow<T extends Record<string, CellValue[]>> = {
 export type DefStep = {
   kind: "def";
   name: string;
-  fn: (row: Row, aggs: Record<string, CellValue | CellValue[]>) => CellValue;
+  fn: (row: Row, aggs: Record<string, CellValue | CellValue[]>, meta: RowMeta) => CellValue;
 };
 
 /**
@@ -129,12 +129,17 @@ export class Engine<
    * Adds a row expression. Evaluated once per row during `evaluate()`.
    *
    * @param name - Result column name. Appended to `headers` and each row.
-   * @param fn   - Receives the current row (typed to `Cols`) and all computed aggregates
-   *               (typed to `Aggs`). Returns the value for this row.
+   * @param fn   - Receives the current row (typed to `Cols`), all computed aggregates
+   *               (typed to `Aggs`), and intrinsic row/column metadata (see {@link RowMeta}).
+   *               Returns the value for this row.
    */
   def<Name extends string, V extends Val>(
     name: Name,
-    fn: (row: Cols & { [K in keyof Input]: Input[K][number] } & { get: RowGet }, aggs: Aggs) => V,
+    fn: (
+      row: Cols & { [K in keyof Input]: Input[K][number] } & { get: RowGet },
+      aggs: Aggs,
+      meta: RowMeta,
+    ) => V,
   ): Engine<Input, Val, Cols & Record<Name, V>, Aggs>
   def<Name extends string>(
     name: Name,
@@ -293,6 +298,8 @@ export class Engine<
 
       let cols: Record<string, CellValue[]> | null = null;
       let rowIndex = 0;
+      let colIndex = objectRows.length > 0 ? Object.keys(objectRows[0]).length : 0;
+      const meta: RowMeta = { rowIndex: 0, rowCount: objectRows.length, defOffset: 0, colIndex };
 
       const rowGet = (
         offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
@@ -308,6 +315,7 @@ export class Engine<
         return objectRows[target];
       };
 
+      let defOffset = 0;
       for (const step of this.#steps) {
         if (step.kind === "agg") {
           if (!cols) cols = buildCols();
@@ -317,11 +325,16 @@ export class Engine<
           aggs[step.name] = step.fn(cols, aggs);
         } else {
           cols = null;
+          meta.defOffset = defOffset;
+          meta.colIndex = colIndex;
           for (rowIndex = 0; rowIndex < objectRows.length; rowIndex++) {
+            meta.rowIndex = rowIndex;
             const objectRow = objectRows[rowIndex];
             const rowWithGet: Row = { ...objectRow, get: rowGet };
-            objectRow[step.name] = step.fn(rowWithGet, aggs);
+            objectRow[step.name] = step.fn(rowWithGet, aggs, meta);
           }
+          defOffset++;
+          colIndex++;
         }
       }
       return;
@@ -354,6 +367,12 @@ export class Engine<
 
       let cols: Record<string, CellValue[]> | null = null;
       let rowIndex = 0;
+      const meta: RowMeta = {
+        rowIndex: 0,
+        rowCount: objectRows.length,
+        defOffset: 0,
+        colIndex: headers.length,
+      };
 
       const rowGet = (
         offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
@@ -369,6 +388,7 @@ export class Engine<
         return objectRows[target];
       };
 
+      let defOffset = 0;
       for (const step of this.#steps) {
         if (step.kind === "agg") {
           if (!cols) cols = buildCols();
@@ -378,12 +398,16 @@ export class Engine<
           aggs[step.name] = step.fn(cols, aggs);
         } else {
           cols = null;
+          meta.defOffset = defOffset;
+          meta.colIndex = headers.length;
           for (rowIndex = 0; rowIndex < objectRows.length; rowIndex++) {
+            meta.rowIndex = rowIndex;
             const objectRow = objectRows[rowIndex];
             const rowWithGet: Row = { ...objectRow, get: rowGet };
-            objectRow[step.name] = step.fn(rowWithGet, aggs);
+            objectRow[step.name] = step.fn(rowWithGet, aggs, meta);
           }
           headers.push(step.name);
+          defOffset++;
         }
       }
       return;
@@ -452,7 +476,14 @@ export class Engine<
     };
 
     const snapshotRow: Row = { get: rowGet };
+    const meta: RowMeta = {
+      rowIndex: 0,
+      rowCount: arrayRows.length,
+      defOffset: 0,
+      colIndex: headers.length,
+    };
 
+    let defOffset = 0;
     for (const step of this.#steps) {
       if (step.kind === "agg") {
         if (!cols) cols = buildCols();
@@ -463,14 +494,18 @@ export class Engine<
       } else {
         currentStepName = step.name;
         cols = null;
+        meta.defOffset = defOffset;
+        meta.colIndex = headers.length;
         for (rowIndex = 0; rowIndex < arrayRows.length; rowIndex++) {
           const row = arrayRows[rowIndex];
           for (let c = 0; c < headers.length; c++) {
             snapshotRow[headers[c]] = row[c];
           }
-          row.push(step.fn(snapshotRow, aggs));
+          meta.rowIndex = rowIndex;
+          row.push(step.fn(snapshotRow, aggs, meta));
         }
         headers.push(step.name);
+        defOffset++;
       }
     }
   }
@@ -524,6 +559,7 @@ export class BoundEngine {
   readonly #rows: CellValue[][];
   readonly #inputColCount: number;
   readonly #snapshot: Row;
+  readonly #meta: RowMeta;
   readonly #aggsTarget: Record<string, CellValue | CellValue[]>;
   #rowIndex = 0;
   #currentStepName = "";
@@ -563,6 +599,7 @@ export class BoundEngine {
     this.#rows = rows;
     this.#inputColCount = headers.length;
     this.#aggsTarget = aggsTarget ?? {};
+    this.#meta = { rowIndex: 0, rowCount: rows.length, defOffset: 0, colIndex: headers.length };
     this.#snapshot = {
       get: (
         offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
@@ -619,7 +656,10 @@ export class BoundEngine {
 
     const aggs = this.#aggsTarget;
     const snapshot = this.#snapshot;
+    const meta = this.#meta;
+    meta.rowCount = this.#rows.length;
     let cols: Record<string, CellValue[]> | null = null;
+    let defOffset = 0;
 
     for (const step of this.#steps) {
       if (step.kind === "agg") {
@@ -631,14 +671,18 @@ export class BoundEngine {
       } else {
         cols = null;
         this.#currentStepName = step.name;
+        meta.defOffset = defOffset;
+        meta.colIndex = this.#headers.length;
         for (this.#rowIndex = 0; this.#rowIndex < this.#rows.length; this.#rowIndex++) {
           const row = this.#rows[this.#rowIndex];
           for (let c = 0; c < this.#headers.length; c++) {
             snapshot[this.#headers[c]] = row[c];
           }
-          row.push(step.fn(snapshot, aggs));
+          meta.rowIndex = this.#rowIndex;
+          row.push(step.fn(snapshot, aggs, meta));
         }
         this.#headers.push(step.name);
+        defOffset++;
       }
     }
   }

@@ -145,6 +145,28 @@ describe("applyDefinitions — edge cases", () => {
   });
 });
 
+describe("applyDefinitions — RowMeta", () => {
+  it("passes rowIndex, rowCount, defOffset, and colIndex as the third argument", () => {
+    const result = applyDefinitions({ x: [10, 20, 30] }, [
+      def("idx", (_row, _aggs, meta) => meta.rowIndex),
+      def("count", (_row, _aggs, meta) => meta.rowCount),
+      def("offset", (_row, _aggs, meta) => meta.defOffset), // 3rd definition -> 2
+      def("colIdx", (_row, _aggs, meta) => meta.colIndex), // after x, idx, count, offset -> 4
+    ]);
+    expect(result["idx"]).toEqual([0, 1, 2]);
+    expect(result["count"]).toEqual([3, 3, 3]);
+    expect(result["offset"]).toEqual([2, 2, 2]);
+    expect(result["colIdx"]).toEqual([4, 4, 4]);
+  });
+
+  it("a real column named 'rowIndex' is not masked by the meta argument", () => {
+    const result = applyDefinitions({ rowIndex: [5, 6] }, [
+      def("seenColumn", (row: Row) => row.rowIndex),
+    ]);
+    expect(result["seenColumn"]).toEqual([5, 6]);
+  });
+});
+
 describe("applyDefinitions — nested expressions", () => {
   it("evaluates complex inline expressions", () => {
     const t = { a: [5], b: [3] };

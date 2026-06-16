@@ -542,6 +542,71 @@ describe("row.get() — BoundEngine", () => {
   });
 });
 
+describe("RowMeta — intrinsic row/column metadata", () => {
+  it("rowIndex advances and rowCount is constant across the array-row path", () => {
+    const { headers, rows } = toRows({ x: [10, 20, 30] });
+    new Engine<{ x: number[] }>()
+      .def("idx", (_row, _aggs, meta) => meta.rowIndex)
+      .def("count", (_row, _aggs, meta) => meta.rowCount)
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "idx")).toEqual([0, 1, 2]);
+    expect(col(headers, rows, "count")).toEqual([3, 3, 3]);
+  });
+
+  it("defOffset counts .def() steps only, skipping .agg() and .aggRow()", () => {
+    const { headers, rows } = toRows({ x: [1, 2] });
+    new Engine<{ x: number[] }>()
+      .def("a", (_row, _aggs, meta) => meta.defOffset)
+      .agg("total", (cols) => (cols.x as number[]).reduce((s, v) => s + v, 0))
+      .aggRow("share", (cols, aggs) => (cols.x as number[]).map((v) => v / aggs.total))
+      .def("b", (_row, _aggs, meta) => meta.defOffset)
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "a")).toEqual([0, 0]);
+    expect(col(headers, rows, "b")).toEqual([1, 1]);
+  });
+
+  it("colIndex is the column's eventual position in the full header row", () => {
+    const { headers, rows } = toRows({ x: [1], y: [2] });
+    new Engine<{ x: number[]; y: number[] }>()
+      .def("a", (_row, _aggs, meta) => meta.colIndex) // after x, y -> 2
+      .def("b", (_row, _aggs, meta) => meta.colIndex) // after x, y, a -> 3
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "a")).toEqual([2]);
+    expect(col(headers, rows, "b")).toEqual([3]);
+    expect(headers).toEqual(["x", "y", "a", "b"]);
+  });
+
+  it("a real column named 'rowIndex' is not masked by the meta argument", () => {
+    const { headers, rows } = toRows({ rowIndex: [99, 98] });
+    new Engine<{ rowIndex: number[] }>()
+      .def("seenColumn", (row) => row.rowIndex)
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "seenColumn")).toEqual([99, 98]);
+  });
+
+  it("works in the headerless object-row path", () => {
+    const rows = [{ x: 1 }, { x: 2 }, { x: 3 }];
+    new Engine<{ x: number[] }>()
+      .def("idx", (_row, _aggs, meta) => meta.rowIndex)
+      .evaluate(rows);
+    const asMap = rows as Array<Record<string, number>>;
+    expect(asMap.map((r) => r["idx"])).toEqual([0, 1, 2]);
+  });
+
+  it("works in BoundEngine and updates rowCount across re-bind-sized data", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[10], [20]];
+    const ctx = new Engine<{ x: number[] }>()
+      .def("idx", (_row, _aggs, meta) => meta.rowIndex)
+      .def("count", (_row, _aggs, meta) => meta.rowCount)
+      .bind(headers, rows);
+
+    ctx.evaluate();
+    expect(col(headers, rows, "idx")).toEqual([0, 1]);
+    expect(col(headers, rows, "count")).toEqual([2, 2]);
+  });
+});
+
 describe("EngineGroup", () => {
   // Shared engine: line_cost per row, total_cost as scalar agg
   const invoiceEngine = new Engine<{ cost: number[]; qty: number[] }>()

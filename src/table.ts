@@ -1,4 +1,4 @@
-import type { CellValue, Row } from "./expr.js";
+import type { CellValue, Row, RowMeta } from "./expr.js";
 import type { Definition } from "./definition.js";
 
 /**
@@ -25,12 +25,19 @@ export function applyDefinitions(table: Table, definitions: readonly Definition[
   const rowCount = resolveRowCount(table);
   const columns: Record<string, readonly CellValue[]> = { ...table };
 
+  let defOffset = 0;
   for (const { name, fn } of definitions) {
     if (Object.prototype.hasOwnProperty.call(columns, name)) {
       throw new Error(`Column "${name}" already exists in the table.`);
     }
 
     const column: CellValue[] = [];
+    const meta: RowMeta = {
+      rowIndex: 0,
+      rowCount,
+      defOffset,
+      colIndex: Object.keys(columns).length,
+    };
 
     for (let i = 0; i < rowCount; i++) {
       const row: Record<string, CellValue> = {};
@@ -57,10 +64,12 @@ export function applyDefinitions(table: Table, definitions: readonly Definition[
         return buildAt(target);
       };
       const rowWithGet: Row = { ...row, get };
-      column.push(fn(rowWithGet, {}));
+      meta.rowIndex = i;
+      column.push(fn(rowWithGet, {}, meta));
     }
 
     columns[name] = column;
+    defOffset++;
   }
 
   return columns;

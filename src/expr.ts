@@ -43,20 +43,46 @@ export type RowGet = {
 export type Row = Record<string, CellValue> & { get: RowGet };
 
 /**
- * An expression function. Receives a row snapshot and the current aggregate results,
- * and returns a CellValue.
+ * Intrinsic, per-step values about the current row and column that aren't derivable
+ * from `row` or `aggs` alone. Passed as the third argument to an {@link ExprFn} so they
+ * can never collide with — or be masked by — a data column of the same name.
+ *
+ * - `rowIndex` / `rowCount` — the current row's 0-based position, and the total number
+ *   of rows in the table. `rowIndex` advances as each row in the current step is evaluated.
+ * - `defOffset` — 0-based position of the current `.def()` step among `.def()` steps only
+ *   (`.agg()` / `.aggRow()` steps don't advance it).
+ * - `colIndex` — 0-based position the current step's column will occupy in the full header
+ *   row, counting input columns and all earlier `.def()` columns.
+ *
+ * @beta
+ */
+export type RowMeta = {
+  rowIndex: number;
+  rowCount: number;
+  defOffset: number;
+  colIndex: number;
+};
+
+/**
+ * An expression function. Receives a row snapshot, the current aggregate results, and
+ * intrinsic row/column metadata, and returns a CellValue.
  *
  * @example
  * ```javascript
- * (row, aggs) => row.cost * row.quantity         // number, no aggs used
- * (row, aggs) => row.x / aggs.total              // references a scalar aggregate
- * (row, aggs) => row.get(-1)?.x ?? 0            // previous row's x value
- * (row, aggs) => row.get(r => r.id === row.id)  // filter-based sibling lookup
+ * (row, aggs) => row.cost * row.quantity              // number, no aggs used
+ * (row, aggs) => row.x / aggs.total                   // references a scalar aggregate
+ * (row, aggs) => row.get(-1)?.x ?? 0                  // previous row's x value
+ * (row, aggs) => row.get(r => r.id === row.id)        // filter-based sibling lookup
+ * (row, aggs, meta) => `item ${meta.rowIndex} of ${meta.rowCount}`
  * ```
  *
  * @beta
  */
-export type ExprFn = (row: Row, aggs: Record<string, CellValue | CellValue[]>) => CellValue;
+export type ExprFn = (
+  row: Row,
+  aggs: Record<string, CellValue | CellValue[]>,
+  meta: RowMeta,
+) => CellValue;
 
 /**
  * A scalar aggregate function. Receives all input columns as arrays and previously
