@@ -88,6 +88,26 @@ const formatter = new Intl.NumberFormat(undefined, {
         <article x-data="engine(25, 10)">
             <h3>Invoices</h3>
             <div id="invoices"></div>
+            <article>
+                    <table id="engine_group">
+                        <thead>
+                            <tr>
+                                <th>Total Quantity</th>
+                                <th>Total Cost</th>
+                                <th>Total Offer</th>
+                                <th>Gross Margin</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td x-text="groupAggs.grand_qty?.toFixed(0)"></td>
+                                <td x-text="groupAggs.grand_cost?.toFixed(2)"></td>
+                                <td x-text="groupAggs.grand_offer?.toFixed(2)"></td>
+                                <td x-text="groupAggs.grand_margin != null ? formatter.format(groupAggs.grand_margin) : ''"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+            </article>
             <template x-for="(invoice, invoice_index) in samples" :key="invoice_index">
                 <details name="invoice_accordion" open>
                     <summary>Invoice <span x-text="invoice_index + 1"></span></summary>
@@ -176,7 +196,7 @@ const formatter = new Intl.NumberFormat(undefined, {
 <script src="/js/prism.js" data-manual></script>
 
 <script type="module">
-import {Engine} from "/nosheet.esm.js"
+import {Engine, EngineGroup} from "/nosheet.esm.js"
 
 function getRandomInt(min, max) {
     min = Math.ceil(min);
@@ -194,15 +214,24 @@ const lineEngine = new Engine(mathCompiler)
     .agg("total_cost", "sum(line_cost)")
     .agg("total_offer", "sum(offer)")
     .def("gross_margin", (row, aggs) => 1-(row.line_cost/row.offer))
-    .def("weighted_margin", "line_cost/total_cost") 
-    .agg("total_mw", (cols) => math.sum(cols.weighted_margin))  
+    .def("weighted_margin", "line_cost/total_cost")
+    .agg("total_mw", (cols) => math.sum(cols.weighted_margin))
     .def("margin_score", (row) => row.gross_margin < 0.3 ? '👎' : '👍');
 
-function evaluateInvoice(inputRows) {
+const boundEngines = [];
+
+const invoiceGroup = new EngineGroup(lineEngine, mathCompiler)
+    .agg("grand_qty", "sum(qty)")
+    .groupAgg("grand_cost",   (aggCols) => math.sum(aggCols.total_cost))
+    .groupAgg("grand_offer",  (aggCols) => math.sum(aggCols.total_offer))
+    .groupAgg("grand_margin", (_aggCols, aggs) => 1 - (aggs.grand_cost / aggs.grand_offer));
+
+function evaluateInvoice(inputRows, idx) {
     const headers = ["name", "cost", "qty", "offer"];
     const rows = inputRows.map(r => [...r]);
     const bound = lineEngine.bind(headers, rows);
     bound.evaluate();
+    boundEngines[idx] = bound;
     return { rows, aggs: bound.aggs };
 }
 
@@ -212,24 +241,31 @@ document.addEventListener('alpine:init', () => {
 
         samples: [],
         inputSamples: [],
+        groupAggs: {},
         init() {
             this.inputSamples = Array.from({ length: invoices }, _ =>
                 Array.from({ length: getRandomInt(5, maxRows) }, (v, k) => {
                     const cost = getRandomInt(1, 200) + (getRandomInt(1, 99) / 100),
                           qty  = getRandomInt(10, 90);
                     return [
-                        `Lineitem #${k}`, 
-                        cost, 
+                        `Lineitem #${k}`,
+                        cost,
                         qty,                   //random qty
                         Math.ceil((cost + getRandomInt(1, 200)) * qty)  //random offer price
                     ];
                 })
             );
-            this.samples = this.inputSamples.map(evaluateInvoice);
+            this.samples = this.inputSamples.map((inputRows, idx) => evaluateInvoice(inputRows, idx));
+            this._evalGroup();
+        },
+        _evalGroup() {
+            invoiceGroup.evaluate(boundEngines);
+            this.groupAggs = { ...invoiceGroup.aggs };
         },
         updateLineItem(invoiceIdx, itemIdx, fieldIdx, value) {
             this.inputSamples[invoiceIdx][itemIdx][fieldIdx] = parseFloat(value) || 0;
-            this.samples[invoiceIdx] = evaluateInvoice(this.inputSamples[invoiceIdx]);
+            this.samples[invoiceIdx] = evaluateInvoice(this.inputSamples[invoiceIdx], invoiceIdx);
+            this._evalGroup();
         }
     }));
 });
