@@ -110,7 +110,11 @@ const formatter = new Intl.NumberFormat(undefined, {
             </article>
             <template x-for="(invoice, invoice_index) in samples" :key="invoice_index">
                 <details name="invoice_accordion" open>
-                    <summary>Invoice <span x-text="invoice_index + 1"></span></summary>
+                    <summary>
+                        Invoice <span x-text="invoice_index + 1"></span>
+                        &mdash; GM: <span x-text="groupAggs.invoice_gross_margin ? formatter.format(groupAggs.invoice_gross_margin[invoice_index]) : ''"></span>
+                        &mdash; Weight: <span x-text="groupAggs.invoice_weighted_margin ? formatter.format(groupAggs.invoice_weighted_margin[invoice_index]) : ''"></span>
+                    </summary>
                     <table>
                         <thead>
                             <tr>
@@ -224,7 +228,9 @@ const invoiceGroup = new EngineGroup(lineEngine, mathCompiler)
     .agg("grand_qty", "sum(qty)")
     .groupAgg("grand_cost",   (aggCols) => math.sum(aggCols.total_cost))
     .groupAgg("grand_offer",  (aggCols) => math.sum(aggCols.total_offer))
-    .groupAgg("grand_margin", (_aggCols, aggs) => 1 - (aggs.grand_cost / aggs.grand_offer));
+    .groupAgg("grand_margin", (_aggCols, aggs) => 1 - (aggs.grand_cost / aggs.grand_offer))
+    .groupAggRow("invoice_gross_margin",    (aggCols) => aggCols.total_cost.map((tc, i) => 1 - (tc / aggCols.total_offer[i])))
+    .groupAggRow("invoice_weighted_margin", (aggCols, aggs) => aggCols.total_cost.map(tc => tc / aggs.grand_cost));
 
 function evaluateInvoice(inputRows, idx) {
     const headers = ["name", "cost", "qty", "offer"];
