@@ -193,7 +193,7 @@ const currencyFormatter = new Intl.NumberFormat(undefined, {
             <hr>
             <h3>Facet:</h3>
             <pre>
-                <code id="prism-1" class="language-javascript"></code>
+                <code src="/js/invoice-engine.js" class="prism-fetch language-javascript"></code>
             </pre>
         </div>
 <!-- JS Content -->
@@ -202,32 +202,13 @@ const currencyFormatter = new Intl.NumberFormat(undefined, {
 <script src="/js/prism.js" data-manual></script>
 
 <script type="module">
-import {Engine, EngineGroup} from "/nosheet.esm.js"
+import {invoiceEngine, makeInvoiceGroup} from "/js/invoice-engine.js"
 
 function getRandomInt(min, max) {
     min = Math.ceil(min);
     max = Math.floor(max);
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
-
-function mathCompiler(expression) {
-  const compiled = math.compile(expression);
-  return (scope) => compiled.evaluate(scope);
-};
-
-//-prism
-
-//Create the per-invoice engine
-const invoiceEngine = new Engine(mathCompiler)
-    .def("line_cost", row => row.cost * row.qty)
-    .agg("total_cost", "sum(line_cost)")
-    .agg("total_offer", "sum(offer)")
-    .def("gross_margin", (row, aggs) => 1-(row.line_cost/row.offer))
-    .def("weighted_margin", "line_cost/total_cost")
-    .agg("total_mw", (cols) => math.sum(cols.weighted_margin))
-    .def("margin_score", (row) => row.gross_margin < 0.3 ? '👎' : '👍');
-
-//-prism
 
 const boundEngines = [];
 let invoiceGroup;
@@ -239,16 +220,7 @@ document.addEventListener('alpine:init', () => {
         samples: [],
         groupAggs: {},
         init() {
-            //-prism            
-            //Create the invoice rollup group, targeting this.groupAggs directly
-            invoiceGroup = new EngineGroup(invoiceEngine, mathCompiler, this.groupAggs)
-                .agg("grand_qty", "sum(qty)")
-                .groupAgg("grand_cost",   (aggCols) => math.sum(aggCols.total_cost))
-                .groupAgg("grand_offer",  (aggCols) => math.sum(aggCols.total_offer))
-                .groupAgg("grand_margin", (_aggCols, aggs) => 1 - (aggs.grand_cost / aggs.grand_offer))
-                .groupAggRow("invoice_gross_margin",    (aggCols) => aggCols.total_cost.map((tc, i) => 1 - (tc / aggCols.total_offer[i])))
-                .groupAggRow("invoice_weighted_margin", (aggCols, aggs) => aggCols.total_cost.map(tc => tc / aggs.grand_cost));
-            //-prism
+            invoiceGroup = makeInvoiceGroup(this.groupAggs);
             const rawSamples = Array.from({ length: invoices }, _ =>
                 Array.from({ length: getRandomInt(5, maxRows) }, (v, k) => {
                     const cost = getRandomInt(1, 200) + (getRandomInt(1, 99) / 100),
@@ -298,7 +270,6 @@ document.addEventListener('alpine:init', () => {
     <p>&copy; 2025 LOBSTAR.</p>
   </footer>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.8.1/math.min.js" integrity="sha512-ix7qh7Gu4nTiTEktF0EWQAsn0cGwuiDJwuxdX4GGpivcx+PxYdJ/j0nlWyUTONg2bOQV98vk+x+Ee6zYpB5wyA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </body>
 
 </html>
