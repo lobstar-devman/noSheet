@@ -892,33 +892,71 @@ export class EngineGroup<
   GroupAggs extends Record<string, Val | Val[]> = CollectedAggs<EngineAggs, Val>,
 > {
   readonly #steps: EngineGroupStep[];
+  readonly #compiler: ExprCompiler<Val> | undefined;
   readonly #aggsTarget: Record<string, CellValue | CellValue[]>;
 
   /**
    * The aggregate values computed during the most recent `evaluate()` call.
    * Empty before the first call. Keys match names passed to `.agg()`, `.aggRow()`,
    * `.groupAgg()`, and `.groupAggRow()`.
-   * This is the same object reference passed as the second constructor argument (if any).
+   * This is the same object reference passed as the second or third constructor argument (if any).
    */
   get aggs(): Record<string, CellValue | CellValue[]> {
     return this.#aggsTarget;
   }
 
   /**
-   * @param engine - Template engine whose type parameters drive IDE completion on
-   *                 `row.<column>` and `aggs.<aggregate>` inside group callbacks.
-   *                 Not used at runtime — pass any instance built from the same
-   *                 `Engine` chain as the `BoundEngine`s you will supply to `evaluate()`.
-   * @param aggs   - Optional external object to receive aggregate results. If supplied,
-   *                 `evaluate()` writes into it and `.aggs` returns the same reference.
+   * @param engine   - Template engine whose type parameters drive IDE completion on
+   *                   `row.<column>` and `aggs.<aggregate>` inside group callbacks.
+   *                   Not used at runtime — pass any instance built from the same
+   *                   `Engine` chain as the `BoundEngine`s you will supply to `evaluate()`.
+   * @param aggs     - Optional external object to receive aggregate results.
    */
   constructor(engine: Engine<Input, Val, Cols, EngineAggs>, aggs?: Record<string, CellValue | CellValue[]>)
-  // eslint-disable-next-line @typescript-eslint/unified-signatures
-  constructor(steps: EngineGroupStep[], aggs?: Record<string, CellValue | CellValue[]>)
+  /**
+   * @param engine   - Template engine (see above).
+   * @param compiler - Expression compiler (e.g. wrapping mathjs) enabling string
+   *                   expressions on `.def()` / `.agg()` / `.aggRow()` / `.groupAgg()` /
+   *                   `.groupAggRow()`. The outer call compiles once per expression;
+   *                   the returned function is called per row/column evaluation.
+   * @param aggs     - Optional external object to receive aggregate results.
+   */
+  constructor(engine: Engine<Input, Val, Cols, EngineAggs>, compiler: ExprCompiler<Val>, aggs?: Record<string, CellValue | CellValue[]>)
+  constructor(steps: EngineGroupStep[], compiler?: ExprCompiler<Val>, aggs?: Record<string, CellValue | CellValue[]>)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(engineOrSteps: Engine<any, any, any, any> | EngineGroupStep[], aggs?: Record<string, CellValue | CellValue[]>) {
+  constructor(engineOrSteps: Engine<any, any, any, any> | EngineGroupStep[], compilerOrAggs?: ExprCompiler<any> | Record<string, CellValue | CellValue[]>, aggs?: Record<string, CellValue | CellValue[]>) {
     this.#steps = Array.isArray(engineOrSteps) ? engineOrSteps : [];
-    this.#aggsTarget = aggs ?? {};
+    if (typeof compilerOrAggs === "function") {
+      this.#compiler = compilerOrAggs as ExprCompiler<Val>;
+      this.#aggsTarget = aggs ?? {};
+    } else {
+      this.#compiler = undefined;
+      this.#aggsTarget = compilerOrAggs ?? aggs ?? {};
+    }
+  }
+
+  #requireCompiler(expression: string): (scope: Record<string, unknown>) => Val | Val[] {
+    if (!this.#compiler) {
+      throw new Error(
+        `Expression "${expression}" requires a compiler. Pass one to the EngineGroup constructor: new EngineGroup(engine, compiler).`,
+      );
+    }
+    return this.#compiler(expression);
+  }
+
+  #makeGroupDefFn(expression: string): GroupDefFn {
+    const evaluate = this.#requireCompiler(expression);
+    return (row, aggs) => evaluate({ ...row, ...aggs });
+  }
+
+  #makeAggFn(expression: string): AggFn {
+    const evaluate = this.#requireCompiler(expression);
+    return (cols, aggs) => evaluate({ ...cols, ...aggs });
+  }
+
+  #makeAggRowFn(expression: string): AggRowFn {
+    const evaluate = this.#requireCompiler(expression);
+    return (cols, aggs) => evaluate({ ...cols, ...aggs }) as unknown as CellValue[];
   }
 
   /**
@@ -933,10 +971,16 @@ export class EngineGroup<
       meta: GroupRowMeta,
     ) => V,
   ): EngineGroup<Input, Val, Cols & Record<Name, V>, EngineAggs, GroupAggs>
+  def<Name extends string>(
+    name: Name,
+    expression: [Input] extends [Record<string, Val[]>] ? string : never,
+  ): EngineGroup<Input, Val, Cols & Record<Name, Val>, EngineAggs, GroupAggs>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  def(name: string, fn: any): any {
+  def(name: string, fnOrExpr: any): any {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const fn = typeof fnOrExpr === "string" ? this.#makeGroupDefFn(fnOrExpr) : fnOrExpr;
     const step: GroupDefStep = { kind: "groupDef", name, fn: fn as GroupDefFn };
-    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
+    return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
   }
 
   /**
@@ -947,10 +991,16 @@ export class EngineGroup<
     name: Name,
     fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V,
   ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
+  agg<Name extends string>(
+    name: Name,
+    expression: [Input] extends [Record<string, Val[]>] ? string : never,
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, Val>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  agg(name: string, fn: any): any {
+  agg(name: string, fnOrExpr: any): any {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const fn = typeof fnOrExpr === "string" ? this.#makeAggFn(fnOrExpr) : fnOrExpr;
     const step: AggStep = { kind: "agg", name, fn: fn as AggFn };
-    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
+    return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
   }
 
   /**
@@ -961,10 +1011,16 @@ export class EngineGroup<
     name: Name,
     fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V[],
   ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
+  aggRow<Name extends string>(
+    name: Name,
+    expression: [Input] extends [Record<string, Val[]>] ? string : never,
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, Val[]>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  aggRow(name: string, fn: any): any {
+  aggRow(name: string, fnOrExpr: any): any {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const fn = typeof fnOrExpr === "string" ? this.#makeAggRowFn(fnOrExpr) : fnOrExpr;
     const step: AggRowStep = { kind: "aggRow", name, fn: fn as AggRowFn };
-    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
+    return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
   }
 
   /**
@@ -976,10 +1032,16 @@ export class EngineGroup<
     name: Name,
     fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V,
   ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
+  groupAgg<Name extends string>(
+    name: Name,
+    expression: [Input] extends [Record<string, Val[]>] ? string : never,
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, Val>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  groupAgg(name: string, fn: any): any {
+  groupAgg(name: string, fnOrExpr: any): any {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const fn = typeof fnOrExpr === "string" ? this.#makeAggFn(fnOrExpr) : fnOrExpr;
     const step: GroupAggStep = { kind: "groupAgg", name, fn: fn as AggFn };
-    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
+    return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
   }
 
   /**
@@ -990,10 +1052,16 @@ export class EngineGroup<
     name: Name,
     fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V[],
   ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
+  groupAggRow<Name extends string>(
+    name: Name,
+    expression: [Input] extends [Record<string, Val[]>] ? string : never,
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, Val[]>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  groupAggRow(name: string, fn: any): any {
+  groupAggRow(name: string, fnOrExpr: any): any {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const fn = typeof fnOrExpr === "string" ? this.#makeAggRowFn(fnOrExpr) : fnOrExpr;
     const step: GroupAggRowStep = { kind: "groupAggRow", name, fn: fn as AggRowFn };
-    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
+    return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
   }
 
   /**
