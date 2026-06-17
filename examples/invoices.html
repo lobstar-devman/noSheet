@@ -58,10 +58,14 @@
   <title>Invoice Example | noSheet</title><link rel="shortcut icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <script>
-const formatter = new Intl.NumberFormat(undefined, {
+const pctFormatter = new Intl.NumberFormat(undefined, {
   style: 'percent',
   maximumFractionDigits: 1
-})    
+});
+
+const currencyFormatter = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 2
+}) 
 </script>  
 </head>
 
@@ -98,10 +102,10 @@ const formatter = new Intl.NumberFormat(undefined, {
                         </thead>
                         <tbody>
                             <tr>
-                                <td x-text="groupAggs.grand_qty?.toFixed(0)"></td>
-                                <td x-text="groupAggs.grand_cost?.toFixed(2)"></td>
-                                <td x-text="groupAggs.grand_offer?.toFixed(2)"></td>
-                                <td x-text="groupAggs.grand_margin != null ? formatter.format(groupAggs.grand_margin) : ''"></td>
+                                <td x-text="currencyFormatter.format(groupAggs.grand_qty)"></td>
+                                <td x-text="currencyFormatter.format(groupAggs.grand_cost)"></td>
+                                <td x-text="currencyFormatter.format(groupAggs.grand_offer)"></td>
+                                <td x-text="groupAggs.grand_margin != null ? pctFormatter.format(groupAggs.grand_margin) : ''"></td>
                             </tr>
                         </tbody>
                     </table>
@@ -110,8 +114,8 @@ const formatter = new Intl.NumberFormat(undefined, {
                 <details name="invoice_accordion" open>
                     <summary>
                         Invoice <span x-text="invoice_index + 1"></span>
-                        &mdash; GM: <span x-text="groupAggs.invoice_gross_margin ? formatter.format(groupAggs.invoice_gross_margin[invoice_index]) : ''"></span>
-                        &mdash; Weight: <span x-text="groupAggs.invoice_weighted_margin ? formatter.format(groupAggs.invoice_weighted_margin[invoice_index]) : ''"></span>
+                        &mdash; GM: <span x-text="groupAggs.invoice_gross_margin ? pctFormatter.format(groupAggs.invoice_gross_margin[invoice_index]) : ''"></span>
+                        &mdash; Weight: <span x-text="groupAggs.invoice_weighted_margin ? pctFormatter.format(groupAggs.invoice_weighted_margin[invoice_index]) : ''"></span>
                     </summary>
                     <table>
                         <thead>
@@ -147,7 +151,7 @@ const formatter = new Intl.NumberFormat(undefined, {
                                         >
                                     </td>
                                     <td>
-                                        <span x-text="item[4].toFixed(2)"></span>
+                                        <span x-text="currencyFormatter.format(item[4])"></span>
                                     </td>
                                     <td>
                                         <input type="number" min="1"
@@ -156,10 +160,10 @@ const formatter = new Intl.NumberFormat(undefined, {
                                         >
                                     </td>
                                     <td>
-                                        <span x-text="formatter.format(item[5])"></span>
+                                        <span x-text="pctFormatter.format(item[5])"></span>
                                     </td>
                                     <td>
-                                        <span x-text="formatter.format(item[6])"></span>
+                                        <span x-text="pctFormatter.format(item[6])"></span>
                                     </td>                                                                        
                                     <td>
                                         <span x-text="item[7]"></span>
@@ -176,7 +180,7 @@ const formatter = new Intl.NumberFormat(undefined, {
                                 <td x-text="invoice.aggs.total_cost.toFixed(2)"></td>
                                 <td x-text="invoice.aggs.total_offer.toFixed(2)"></td>
                                 <td></td>
-                                <td x-text="formatter.format(invoice.aggs.total_mw)"></td>
+                                <td x-text="pctFormatter.format(invoice.aggs.total_mw)"></td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -214,7 +218,7 @@ function mathCompiler(expression) {
 //-prism
 
 //Create the per-invoice engine
-const lineEngine = new Engine(mathCompiler)
+const invoiceEngine = new Engine(mathCompiler)
     .def("line_cost", row => row.cost * row.qty)
     .agg("total_cost", "sum(line_cost)")
     .agg("total_offer", "sum(offer)")
@@ -223,37 +227,29 @@ const lineEngine = new Engine(mathCompiler)
     .agg("total_mw", (cols) => math.sum(cols.weighted_margin))
     .def("margin_score", (row) => row.gross_margin < 0.3 ? '👎' : '👍');
 
-//Create the invoice rollup group
-const invoiceGroup = new EngineGroup(lineEngine, mathCompiler)
-    .agg("grand_qty", "sum(qty)")
-    .groupAgg("grand_cost",   (aggCols) => math.sum(aggCols.total_cost))
-    .groupAgg("grand_offer",  (aggCols) => math.sum(aggCols.total_offer))
-    .groupAgg("grand_margin", (_aggCols, aggs) => 1 - (aggs.grand_cost / aggs.grand_offer))
-    .groupAggRow("invoice_gross_margin",    (aggCols) => aggCols.total_cost.map((tc, i) => 1 - (tc / aggCols.total_offer[i])))
-    .groupAggRow("invoice_weighted_margin", (aggCols, aggs) => aggCols.total_cost.map(tc => tc / aggs.grand_cost));
-
-//action a change to an input column    
-const boundEngines = [];
-
-function evaluateInvoice(inputRows, idx) {
-    const headers = ["name", "cost", "qty", "offer"];
-    const rows = inputRows.map(r => [...r]);
-    const bound = lineEngine.bind(headers, rows);
-    bound.evaluate();
-    boundEngines[idx] = bound;
-    return { rows, aggs: bound.aggs };
-}
 //-prism
+
+const boundEngines = [];
+let invoiceGroup;
 
 document.addEventListener('alpine:init', () => {
 
     Alpine.data('engine', (maxRows, invoices) => ({
 
         samples: [],
-        inputSamples: [],
         groupAggs: {},
         init() {
-            this.inputSamples = Array.from({ length: invoices }, _ =>
+            //-prism            
+            //Create the invoice rollup group, targeting this.groupAggs directly
+            invoiceGroup = new EngineGroup(invoiceEngine, mathCompiler, this.groupAggs)
+                .agg("grand_qty", "sum(qty)")
+                .groupAgg("grand_cost",   (aggCols) => math.sum(aggCols.total_cost))
+                .groupAgg("grand_offer",  (aggCols) => math.sum(aggCols.total_offer))
+                .groupAgg("grand_margin", (_aggCols, aggs) => 1 - (aggs.grand_cost / aggs.grand_offer))
+                .groupAggRow("invoice_gross_margin",    (aggCols) => aggCols.total_cost.map((tc, i) => 1 - (tc / aggCols.total_offer[i])))
+                .groupAggRow("invoice_weighted_margin", (aggCols, aggs) => aggCols.total_cost.map(tc => tc / aggs.grand_cost));
+            //-prism
+            const rawSamples = Array.from({ length: invoices }, _ =>
                 Array.from({ length: getRandomInt(5, maxRows) }, (v, k) => {
                     const cost = getRandomInt(1, 200) + (getRandomInt(1, 99) / 100),
                           qty  = getRandomInt(10, 90);
@@ -265,16 +261,26 @@ document.addEventListener('alpine:init', () => {
                     ];
                 })
             );
-            this.samples = this.inputSamples.map((inputRows, idx) => evaluateInvoice(inputRows, idx));
+
+            this.samples = rawSamples.map(() => ({ rows: [], aggs: {} }));
+            rawSamples.forEach((inputRows, idx) => {
+                this.samples[idx].rows = inputRows.map(r => [...r]);
+                boundEngines[idx] = invoiceEngine.bind(
+                    ["name", "cost", "qty", "offer"],
+                    this.samples[idx].rows,
+                    this.samples[idx].aggs
+                );
+                boundEngines[idx].evaluate();
+            });
+
             this._evalGroup();
         },
         _evalGroup() {
             invoiceGroup.evaluate(boundEngines);
-            this.groupAggs = { ...invoiceGroup.aggs };
         },
         updateLineItem(invoiceIdx, itemIdx, fieldIdx, value) {
-            this.inputSamples[invoiceIdx][itemIdx][fieldIdx] = parseFloat(value) || 0;
-            this.samples[invoiceIdx] = evaluateInvoice(this.inputSamples[invoiceIdx], invoiceIdx);
+            this.samples[invoiceIdx].rows[itemIdx][fieldIdx] = parseFloat(value) || 0;
+            boundEngines[invoiceIdx].evaluate();
             this._evalGroup();
         }
     }));
