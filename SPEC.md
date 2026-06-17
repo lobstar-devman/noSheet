@@ -575,34 +575,108 @@ one clobbering the last):
 
 ## 7. `EngineGroup`
 
-Aggregates and extends a set of `BoundEngine`s that share the same originating
+Aggregates and extends a collection of `BoundEngine`s that share the same originating
 `Engine` (so every donor aggregate has the same set of keys, each consistently either
 scalar-shaped, from `.agg()`, or array-shaped, from `.aggRow()`, across every engine).
 **The caller is responsible for calling each engine's own `.evaluate()` before calling
-`engineGroup.evaluate()`** — the group never triggers a per-engine evaluation itself.
+`engineGroup.evaluate(engines)`** — the group never triggers a per-engine evaluation
+itself.
+
+`EngineGroup` is an **immutable builder**, exactly like `Engine`: every
+`.def()`/`.agg()`/`.aggRow()`/`.groupAgg()`/`.groupAggRow()` call returns a *new*
+`EngineGroup` instance with one more internal step and an extended generic type
+parameter. The `BoundEngine[]` to evaluate against is passed at call time to
+`.evaluate()`, not at construction time — the same `EngineGroup` instance can be
+applied to different engine arrays.
 
 ```ts
-class EngineGroup {
-  constructor(engines: BoundEngine[], aggs?: Record<string, CellValue | CellValue[]>)
+type CollectedAggs<
+  A extends Record<string, CellValue | CellValue[]>,
+  Val extends CellValue = CellValue,
+> = { [K in keyof A]: Val[] };
+
+class EngineGroup<
+  Input extends Record<string, CellValue[]>,
+  Val extends CellValue = CellValue,
+  Cols extends { [K in keyof Input]: Input[K][number] } = TableToRow<Input>,
+  EngineAggs extends Record<string, Val | Val[]> = Record<never, never>,
+  GroupAggs extends Record<string, Val | Val[]> = CollectedAggs<EngineAggs, Val>,
+> {
+  constructor(engine: Engine<Input, Val, Cols, EngineAggs>, aggs?: Record<string, CellValue | CellValue[]>)
+  constructor(engine: Engine<Input, Val, Cols, EngineAggs>, compiler: ExprCompiler<Val>, aggs?: Record<string, CellValue | CellValue[]>)
   get aggs(): Record<string, CellValue | CellValue[]>
-  def(name: string, fn: GroupDefFn): this
-  agg(name: string, fn: AggFn): this
-  aggRow(name: string, fn: AggRowFn): this
-  groupAgg(name: string, fn: AggFn): this
-  groupAggRow(name: string, fn: AggRowFn): this
-  evaluate(): void
+  def<Name extends string, V extends Val>(
+    name: Name,
+    fn: (row: GroupRow & Cols & { [K in keyof Input]: Input[K][number] }, aggs: GroupAggs, meta: GroupRowMeta) => V,
+  ): EngineGroup<Input, Val, Cols & Record<Name, V>, EngineAggs, GroupAggs>
+  agg<Name extends string, V extends Val>(
+    name: Name,
+    fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V,
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
+  aggRow<Name extends string, V extends Val>(
+    name: Name,
+    fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V[],
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
+  groupAgg<Name extends string, V extends Val>(
+    name: Name,
+    fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V,
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
+  groupAggRow<Name extends string, V extends Val>(
+    name: Name,
+    fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V[],
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
+  evaluate(engines: BoundEngine[]): void
 }
 ```
 
 Like `BoundEngine`, the `aggs` constructor argument is stored by reference and returned
 by the `.aggs` getter — empty `{}` if omitted.
 
-Unlike `Engine`, `EngineGroup` is a **mutable** builder: `.def()`/`.agg()`/`.aggRow()`/
-`.groupAgg()`/`.groupAggRow()` push onto an internal step list and return `this` (no
-new-instance-per-call is required, because there is no per-call generic type growth to
-preserve — `EngineGroup` is not generically typed over its accumulated columns).
+### 7.1 Type parameters
 
-### 7.1 Two kinds of row-level data a group step can see
+- `Input` — the input table's shape (same as the template `Engine`'s `Input`). Inferred
+  from the `Engine` passed to the constructor.
+- `Val` — the cell value type (same as the template `Engine`'s `Val`). Inferred from
+  the constructor argument.
+- `Cols` — the accumulated **group-row type**: starts as `TableToRow<Input>` and gains
+  one key per `.def()` call. This is what makes `row.<name>` autocomplete and forward
+  references a compile error inside `.def()` callbacks — the same mechanism as
+  `Engine.Cols`.
+- `EngineAggs` — the template `Engine`'s own aggregate type (from its `.agg()`/
+  `.aggRow()` declarations). Fixed at construction time; never grows through the builder
+  chain. Used to derive `GroupAggs`'s default and to type `aggCols` in `.groupAgg()`/
+  `.groupAggRow()` callbacks.
+- `GroupAggs` — the accumulated **group aggregate type**: starts as
+  `CollectedAggs<EngineAggs, Val>` (so the pre-seeded donor aggregates are fully typed
+  from the very first step), and gains one key per `.agg()`/`.aggRow()`/`.groupAgg()`/
+  `.groupAggRow()` call — mirroring `Engine.Aggs` growth.
+
+`CollectedAggs<A, Val>` maps each key of `A` to `Val[]`: scalar donor aggregates (from
+`.agg()`) become one-entry-per-engine arrays; array donor aggregates (from `.aggRow()`)
+are flat-concatenated across engines.
+
+### 7.2 Constructor
+
+```ts
+constructor(engine: Engine<Input, Val, Cols, EngineAggs>, aggs?: Record<string, CellValue | CellValue[]>)
+constructor(engine: Engine<Input, Val, Cols, EngineAggs>, compiler: ExprCompiler<Val>, aggs?: Record<string, CellValue | CellValue[]>)
+```
+
+The first argument is a **template engine**: used only to infer `Input`, `Val`, `Cols`,
+and `EngineAggs`. It is never evaluated and holds no row data. Any `Engine` with the
+correct generic shape satisfies this requirement — the same instance used to create the
+`BoundEngine`s is a natural choice.
+
+The optional `compiler` (second argument, when it is a function) enables string
+expression overloads on all five builder methods (§7.7). The optional `aggs` object
+(last argument in either overload) is stored by reference and returned by `.aggs` —
+defaults to `{}` if omitted.
+
+An internal overload `constructor(steps: EngineGroupStep[], compiler?, aggs?)` is used
+by each builder method to produce the next immutable instance in the chain; it is not
+part of the public surface, but the *behavior* it produces is normative.
+
+### 7.3 Two kinds of row-level data a group step can see
 
 - **Merged donor-table columns (`cols`)** — every column from every engine's `.cols`,
   concatenated in engine order, one array per column name. Used by `.agg()`/`.aggRow()`.
@@ -612,43 +686,61 @@ preserve — `EngineGroup` is not generically typed over its accumulated columns
   (`[engine0Value, engine1Value, …]`); **array** values (from `.aggRow()`) are
   **flat-concatenated** across engines into one combined array (not kept as one
   sub-array per engine). Used by `.groupAgg()`/`.groupAggRow()`. This table is frozen
-  for the whole `evaluate()` call — appending columns via `.def()` (§7.3) never changes
+  for the whole `evaluate()` call — appending columns via `.def()` (§7.6) never changes
   it, since `.def()` only touches donor *tables*, not donor *aggregates*.
 
-### 7.2 `.agg()` / `.aggRow()` — unchanged shape, group-wide
+### 7.4 `.agg()` / `.aggRow()` — unchanged shape, group-wide
 
 ```ts
-agg(name, fn: (cols, aggs) => CellValue): this
-aggRow(name, fn: (cols, aggs) => CellValue[]): this
+agg<Name extends string, V extends Val>(
+  name: Name,
+  fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V,
+): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
+
+aggRow<Name extends string, V extends Val>(
+  name: Name,
+  fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V[],
+): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
 ```
 
-- `cols` — the merged donor-table columns (§7.1), rebuilt lazily and invalidated by any
+- `cols` — the merged donor-table columns (§7.3), rebuilt lazily and invalidated by any
   preceding `.def()` step in the same `evaluate()` call (mirrors §4.7.4's aggregate-step
   caching exactly, just one level up).
 - `aggs` — seeded at the start of `evaluate()` with the entire collected donor-aggregate
-  table (§7.1) — so e.g. `aggs.total_cost` is already an array of per-engine totals
+  table (§7.3) — so e.g. `aggs.total_cost` is already an array of per-engine totals
   before any group step runs — and from then on accumulates every group step's own
   result (`.agg()`, `.aggRow()`, `.groupAgg()`, `.groupAggRow()`) under its name, in
   declaration order, so later steps can read earlier ones.
 - The result is stored both in this running `aggs` map (so later steps can read it) and
   written to the `aggsTarget` object exposed by `.aggs`.
 
-### 7.3 `.groupAgg()` / `.groupAggRow()` — additive, operate on `aggCols` only
+String expression overloads are available when a compiler was supplied (§7.7).
+
+### 7.5 `.groupAgg()` / `.groupAggRow()` — additive, operate on `aggCols` only
 
 ```ts
-groupAgg(name, fn: (aggCols, aggs) => CellValue): this
-groupAggRow(name, fn: (aggCols, aggs) => CellValue[]): this
+groupAgg<Name extends string, V extends Val>(
+  name: Name,
+  fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V,
+): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
+
+groupAggRow<Name extends string, V extends Val>(
+  name: Name,
+  fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V[],
+): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
 ```
 
-Identical wiring to §7.2, except the first argument is `aggCols` (§7.1) instead of the
+Identical wiring to §7.4, except the first argument is `aggCols` (§7.3) instead of the
 merged row-level `cols` — i.e. "run an aggregate over the array of donor aggregates as
 if it were itself a donor table." `aggCols` never changes within one `evaluate()` call
 (no cache invalidation needed — only `.def()` mutates donor tables, and donor
 aggregates are never touched mid-`evaluate()`). A `.groupAggRow()` result has one value
 per *engine* (not per row) and is most naturally consumed from a later `.def()` step as
-`aggs.<name>[meta.engineIndex]` (§7.4).
+`aggs.<name>[meta.engineIndex]` (§7.6).
 
-### 7.4 `.def(name, fn)` — append a column to every engine's own donor table
+String expression overloads are available when a compiler was supplied (§7.7).
+
+### 7.6 `.def(name, fn)` — append a column to every engine's own donor table
 
 ```ts
 type EngineAccessor = (
@@ -671,6 +763,15 @@ type GroupDefFn = (
   aggs: Record<string, CellValue | CellValue[]>,
   meta: GroupRowMeta,
 ) => CellValue;
+```
+
+The typed signature:
+
+```ts
+def<Name extends string, V extends Val>(
+  name: Name,
+  fn: (row: GroupRow & Cols & { [K in keyof Input]: Input[K][number] }, aggs: GroupAggs, meta: GroupRowMeta) => V,
+): EngineGroup<Input, Val, Cols & Record<Name, V>, EngineAggs, GroupAggs>
 ```
 
 For **every** engine in the group, in engine order, appends one column to that engine's
@@ -706,7 +807,7 @@ steps).
     §2.1, and needs no special-casing — it falls out naturally from sequential
     processing order plus `.cols`/`.aggs` always reading live state.
 - **`aggs`** — the **group's own running aggregate map** (the exact same accumulator
-  described in §7.2/§7.3 — whatever `.agg()`/`.aggRow()`/`.groupAgg()`/`.groupAggRow()`
+  described in §7.4/§7.5 — whatever `.agg()`/`.aggRow()`/`.groupAgg()`/`.groupAggRow()`
   have produced so far in declaration order). It is *not* the current engine's own
   donor aggregate — reach that explicitly via `row.engine(0).aggs`. This is a
   deliberate, uniform design: there is exactly one mechanism for "read an engine's
@@ -714,17 +815,54 @@ steps).
 - **`meta`** — `RowMeta`'s fields, scoped to the row/step currently being processed for
   the current engine, plus `engineIndex`/`engineCount`.
 
-Appending a `.def()` column invalidates the cached merged `cols` (§7.2) for any
+Appending a `.def()` column invalidates the cached merged `cols` (§7.4) for any
 `.agg()`/`.aggRow()` step declared after it, exactly mirroring §4.7.4's own-engine
 cache-invalidation-on-row-expression-step behavior, one level up.
 
-### 7.5 `.evaluate()` algorithm
+A string expression overload is available when a compiler was supplied (§7.7).
+
+### 7.7 `ExprCompiler` — string-expression support
+
+When a compiler is supplied to the constructor (§7.2), all five builder methods gain a
+string-expression overload. The overload is available only when
+`[Input] extends [Record<string, Val[]>]` — the same guard as `Engine`'s string
+overloads (§4.6):
+
+```ts
+def(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
+agg(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
+aggRow(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
+groupAgg(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
+groupAggRow(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
+```
+
+The scope merged for each string expression:
+
+- `.def()` — `{ ...row, ...aggs }` (row snapshot merged with the running group
+  aggregates — same as `Engine`'s `.def()` string path)
+- `.agg()` and `.aggRow()` — `{ ...cols, ...aggs }` (merged donor-table columns plus
+  running group aggregates — same as `Engine`'s `.agg()`/`.aggRow()` string path)
+- `.groupAgg()` and `.groupAggRow()` — `{ ...aggCols, ...aggs }` (donor-aggregate
+  table columns plus running group aggregates)
+
+If a string expression is passed without a compiler having been supplied to the
+constructor, throw:
+
+```
+Expression "<expression>" requires a compiler. Pass one to the EngineGroup constructor: new EngineGroup(engine, compiler).
+```
+
+### 7.8 `.evaluate(engines)` algorithm
+
+```ts
+evaluate(engines: BoundEngine[]): void
+```
 
 1. Call `engine.resetGroupColumns()` (§5.6) on every engine — unconditionally, even if
    the group has no `.def()` steps at all (cheap no-op if nothing was appended last
    time). This makes repeated `evaluate()` calls idempotent without requiring the
    caller to re-run each engine's own `.evaluate()` in between.
-2. Build `aggCols` (§7.1) from every engine's current `.aggs`.
+2. Build `aggCols` (§7.3) from every engine's current `.aggs`.
 3. Seed the running `aggs` map as a shallow copy of `aggCols`.
 4. **Upfront, atomic validation**: for every `.def()` step in declaration order, check
    its name doesn't already exist in any engine's current header set (one running
@@ -742,7 +880,7 @@ cache-invalidation-on-row-expression-step behavior, one level up.
      (`aggCols` is never rebuilt mid-call).
    - `def` (a `GroupDefStep`): invalidate the merged `cols` cache. For every engine, in
      order, call `engine.appendColumn(name, computeValue)` (§5.7) where `computeValue`
-     wraps the user's `GroupDefFn` exactly as described in §7.4 (building the
+     wraps the user's `GroupDefFn` exactly as described in §7.6 (building the
      `EngineAccessor` closure, the `GroupRow`, and the `GroupRowMeta`). Increment the
      group-level `defOffset` counter once per `.def()` step (shared across all engines
      for that one step — every engine processing the *same* `.def()` step sees the same
@@ -785,6 +923,7 @@ generic signature in §4 threads `Val` through consistently rather than hard-cod
 | `Engine.evaluate` (with-headers / array-row paths), `BoundEngine` construction, `BoundEngine.appendColumn`: a `.def()`/group-`.def()` name already exists in headers | `Column "<name>" already exists in headers.` |
 | `Engine.evaluate` (array-row path), `BoundEngine` construction: a row's length doesn't match `headers.length` | `Row length <row.length> does not match headers length <headers.length>.` |
 | `Engine`: a string expression was passed without a compiler | `Expression "<expression>" requires a compiler. Pass one to the Engine constructor: new Engine(compiler).` |
+| `EngineGroup`: a string expression was passed without a compiler | `Expression "<expression>" requires a compiler. Pass one to the EngineGroup constructor: new EngineGroup(engine, compiler).` |
 | `EngineGroup.evaluate`: a `.def()` name already exists in any engine's headers | `Column "<name>" already exists in an engine's headers.` |
 
 Every name-collision check across this whole library is **atomic**: it walks the full
@@ -799,9 +938,10 @@ Not normative, but mirrors a clean separation of concerns:
   (everything in §2).
 - `definition.ts` — `Definition`, `def()` (§3).
 - `table.ts` — `Table`, `applyDefinitions()` (§3).
-- `engine.ts` — `ExprCompiler`, `TableToRow`, the internal `Step` discriminated union,
-  `Engine`, `BoundEngine`, and `EngineGroup` plus its supporting types
-  (`AbsoluteRowGet`, `EngineAccessor`, `GroupRow`, `GroupRowMeta`, `GroupDefFn`) — §4–§7.
+- `engine.ts` — `ExprCompiler`, `TableToRow`, `CollectedAggs`, the internal `Step`
+  discriminated union, `Engine`, `BoundEngine`, and `EngineGroup` plus its supporting
+  types (`AbsoluteRowGet`, `EngineAccessor`, `GroupRow`, `GroupRowMeta`, `GroupDefFn`)
+  — §4–§7.
 - `index.ts` — re-exports the public surface of all of the above.
 
 ## 11. Worked example — multi-invoice grouping
@@ -822,7 +962,7 @@ inv1.evaluate();
 inv2.evaluate();
 
 const groupAggs: Record<string, CellValue | CellValue[]> = {};
-new EngineGroup([inv1, inv2], groupAggs)
+new EngineGroup(invoiceEngine, groupAggs)
   // group-wide row-level aggregate: total quantity across both invoices' line items
   .agg("total_qty", (cols) => (cols.qty as number[]).reduce((a, b) => a + b, 0))
   // aggregate-of-aggregates: sum each invoice's own total_cost
@@ -838,7 +978,7 @@ new EngineGroup([inv1, inv2], groupAggs)
     const otherTotal = (other?.aggs.total_cost as number) ?? 0;
     return otherTotal === 0 ? 0 : myTotal / otherTotal;
   })
-  .evaluate();
+  .evaluate([inv1, inv2]);
 
 // groupAggs.grand_total === 115
 // groupAggs.share === [80/115, 35/115]
