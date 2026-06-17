@@ -15,12 +15,12 @@ const mathCompiler: ExprCompiler = (expression) => {
 };
 
 export const invoiceEngine = new Engine<InvoiceInput>(mathCompiler)
-    .def("line_cost",      row => row.cost * row.qty)
-    .agg("total_cost",     "sum(line_cost)")
+    .def("line_cost",      row => row.cost * row.qty)   // an example using javascript expressions
+    .agg("total_cost",     "sum(line_cost)")            // an example using compilable mathsjs expressions
     .agg("total_offer",    "sum(offer)")
     .def("gross_margin",   row => 1 - (row.line_cost / row.offer))
     .def("weighted_margin","line_cost/total_cost")
-    .agg("total_mw",       cols => sum(cols.weighted_margin as number[]))
+    .agg("total_mw",       cols => sum(cols.weighted_margin as number[])) // an example using mathjs functions
     .def("margin_score",   row => row.gross_margin < 0.3 ? '👎' : '👍');
 
 export function makeInvoiceGroup(aggsTarget: Record<string, CellValue | CellValue[]>) {
