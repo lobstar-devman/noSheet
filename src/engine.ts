@@ -834,35 +834,63 @@ function makeEngineHandle(
 }
 
 /**
- * Aggregates across a set of {@link BoundEngine} instances that share the same
- * originating `Engine`.
+ * Maps an Engine's aggregate type to the donor-aggregate table that {@link EngineGroup}
+ * builds at `evaluate()` time: scalar aggregates become `Val[]` (one value per engine)
+ * and array aggregates are flat-concatenated into `Val[]`.
  *
- * - `.agg(name, (cols, aggs) => scalar)` / `.aggRow(name, (cols, aggs) => array)` —
- *   unchanged from before: `cols` is every column from every engine's donor table
- *   concatenated into one array per column name; `aggs` holds per-engine aggregate
- *   values collected into arrays (scalar values become `[v1, v2, …]`; array values
- *   are flat-concatenated), plus any group-level aggregate already computed earlier
- *   in the chain.
- *
- * - `.groupAgg(name, (aggCols, aggs) => scalar)` / `.groupAggRow(name, (aggCols, aggs) => array)` —
- *   like `.agg()` / `.aggRow()`, but `aggCols` is *only* the per-engine collected
- *   donor-aggregate table described above (no row-level `cols` mixed in) — i.e. "run
- *   an aggregate over the array of donor aggregates as if it were a donor table."
- *
- * - `.def(name, (row, aggs, meta) => value)` — appends one column to *every* engine's
- *   own donor table, one row at a time, run after each engine's own `evaluate()` has
- *   already completed. `row` is the usual same-engine row snapshot plus `row.engine(offset)`
- *   for reaching sibling engines (see {@link EngineAccessor}); `aggs` is the group's own
- *   running aggregate map (the same one `.agg()` / `.groupAgg()` write into — to read the
- *   *current* engine's own donor aggregate, use `row.engine(0).aggs`); `meta` adds
- *   `engineIndex` / `engineCount` to {@link RowMeta}.
- *
- * Call each engine's own `evaluate()` before calling `engineGroup.evaluate()`.
+ * This is the default initial shape of `aggs` inside every group callback — it holds
+ * the pre-seeded per-engine aggregates before the group adds its own aggregates via
+ * `.agg()` / `.groupAgg()` etc.
  *
  * @beta
  */
-export class EngineGroup {
-  readonly #engines: BoundEngine[];
+export type CollectedAggs<
+  A extends Record<string, CellValue | CellValue[]>,
+  Val extends CellValue = CellValue,
+> = { [K in keyof A]: Val[] };
+
+/**
+ * Aggregates across a set of {@link BoundEngine} instances that share the same
+ * originating `Engine`.
+ *
+ * Build the group from a template `Engine` instance (for typing), then call
+ * `.def()` / `.agg()` / `.groupAgg()` etc. to add steps. Each method returns a new
+ * `EngineGroup` — the builder is immutable. Finally call `evaluate(engines)` with
+ * the actual `BoundEngine` instances at runtime.
+ *
+ * - `.agg(name, (cols, aggs) => scalar)` / `.aggRow(name, (cols, aggs) => array)` —
+ *   `cols` is every column from every engine's donor table concatenated; `aggs` starts
+ *   as the {@link CollectedAggs} of the template engine's own aggregates (one array per
+ *   key, one entry per engine) and grows as group-level aggregates are added.
+ *
+ * - `.groupAgg(name, (aggCols, aggs) => scalar)` / `.groupAggRow(...)` —
+ *   like `.agg()` / `.aggRow()` but `aggCols` is *only* the per-engine collected
+ *   donor-aggregate table (no row-level columns).
+ *
+ * - `.def(name, (row, aggs, meta) => value)` — appends one column to *every* engine's
+ *   donor table. `row` includes `row.engine(offset)` for reaching sibling engines;
+ *   `aggs` is the group's running aggregate map; `meta` adds `engineIndex` /
+ *   `engineCount` to {@link RowMeta}.
+ *
+ * Call each engine's own `evaluate()` before calling `engineGroup.evaluate(engines)`.
+ *
+ * @typeParam Input     - Input table type (inferred from the template Engine).
+ * @typeParam Val       - Cell value type (inferred from the template Engine).
+ * @typeParam Cols      - Accumulated row type; grows with each `.def()` call.
+ * @typeParam EngineAggs - The template Engine's own aggregate type; drives the initial
+ *                        shape of `aggs` in all group callbacks via {@link CollectedAggs}.
+ * @typeParam GroupAggs - Group-level aggregate type; starts as
+ *                        `CollectedAggs<EngineAggs>` and grows with each group agg step.
+ *
+ * @beta
+ */
+export class EngineGroup<
+  Input extends Record<string, CellValue[]>,
+  Val extends CellValue = CellValue,
+  Cols extends { [K in keyof Input]: Input[K][number] } = TableToRow<Input>,
+  EngineAggs extends Record<string, Val | Val[]> = Record<never, never>,
+  GroupAggs extends Record<string, Val | Val[]> = CollectedAggs<EngineAggs, Val>,
+> {
   readonly #steps: EngineGroupStep[];
   readonly #aggsTarget: Record<string, CellValue | CellValue[]>;
 
@@ -876,55 +904,114 @@ export class EngineGroup {
     return this.#aggsTarget;
   }
 
-  constructor(engines: BoundEngine[], aggs?: Record<string, CellValue | CellValue[]>) {
-    this.#engines = engines;
-    this.#steps = [];
+  /**
+   * @param engine - Template engine whose type parameters drive IDE completion on
+   *                 `row.<column>` and `aggs.<aggregate>` inside group callbacks.
+   *                 Not used at runtime — pass any instance built from the same
+   *                 `Engine` chain as the `BoundEngine`s you will supply to `evaluate()`.
+   * @param aggs   - Optional external object to receive aggregate results. If supplied,
+   *                 `evaluate()` writes into it and `.aggs` returns the same reference.
+   */
+  constructor(engine: Engine<Input, Val, Cols, EngineAggs>, aggs?: Record<string, CellValue | CellValue[]>)
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
+  constructor(steps: EngineGroupStep[], aggs?: Record<string, CellValue | CellValue[]>)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(engineOrSteps: Engine<any, any, any, any> | EngineGroupStep[], aggs?: Record<string, CellValue | CellValue[]>) {
+    this.#steps = Array.isArray(engineOrSteps) ? engineOrSteps : [];
     this.#aggsTarget = aggs ?? {};
   }
 
-  /** Appends a column to every engine's own donor table — see the class-level doc for details. */
-  def(name: string, fn: GroupDefFn): this {
-    this.#steps.push({ kind: "groupDef", name, fn });
-    return this;
-  }
-
-  /** Adds a scalar aggregate step over all engines' merged columns and aggregates. */
-  agg(name: string, fn: AggFn): this {
-    this.#steps.push({ kind: "agg", name, fn });
-    return this;
-  }
-
-  /** Adds a per-element aggregate step over all engines' merged columns and aggregates. */
-  aggRow(name: string, fn: AggRowFn): this {
-    this.#steps.push({ kind: "aggRow", name, fn });
-    return this;
-  }
-
-  /** Adds a scalar aggregate step over the per-engine collected donor-aggregate table. */
-  groupAgg(name: string, fn: AggFn): this {
-    this.#steps.push({ kind: "groupAgg", name, fn });
-    return this;
-  }
-
-  /** Adds a per-engine aggregate step over the per-engine collected donor-aggregate table. */
-  groupAggRow(name: string, fn: AggRowFn): this {
-    this.#steps.push({ kind: "groupAggRow", name, fn });
-    return this;
+  /**
+   * Appends a column to every engine's own donor table — see the class-level doc for details.
+   * Returns a new `EngineGroup` whose `Cols` type has grown by one entry.
+   */
+  def<Name extends string, V extends Val>(
+    name: Name,
+    fn: (
+      row: GroupRow & Cols & { [K in keyof Input]: Input[K][number] },
+      aggs: GroupAggs,
+      meta: GroupRowMeta,
+    ) => V,
+  ): EngineGroup<Input, Val, Cols & Record<Name, V>, EngineAggs, GroupAggs>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  def(name: string, fn: any): any {
+    const step: GroupDefStep = { kind: "groupDef", name, fn: fn as GroupDefFn };
+    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
   }
 
   /**
-   * Runs all group steps against the current state of the bound engines.
+   * Adds a scalar aggregate over all engines' merged columns. Returns a new
+   * `EngineGroup` whose `GroupAggs` type has grown by one entry.
+   */
+  agg<Name extends string, V extends Val>(
+    name: Name,
+    fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V,
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  agg(name: string, fn: any): any {
+    const step: AggStep = { kind: "agg", name, fn: fn as AggFn };
+    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
+  }
+
+  /**
+   * Adds a per-row aggregate over all engines' merged columns. Returns a new
+   * `EngineGroup` whose `GroupAggs` type has grown by one entry (typed as `V[]`).
+   */
+  aggRow<Name extends string, V extends Val>(
+    name: Name,
+    fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V[],
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  aggRow(name: string, fn: any): any {
+    const step: AggRowStep = { kind: "aggRow", name, fn: fn as AggRowFn };
+    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
+  }
+
+  /**
+   * Adds a scalar aggregate over the per-engine donor-aggregate table
+   * (`aggCols` is {@link CollectedAggs}`<EngineAggs>`, not merged row columns).
+   * Returns a new `EngineGroup` whose `GroupAggs` type has grown by one entry.
+   */
+  groupAgg<Name extends string, V extends Val>(
+    name: Name,
+    fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V,
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  groupAgg(name: string, fn: any): any {
+    const step: GroupAggStep = { kind: "groupAgg", name, fn: fn as AggFn };
+    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
+  }
+
+  /**
+   * Adds a per-engine aggregate over the per-engine donor-aggregate table.
+   * Returns a new `EngineGroup` whose `GroupAggs` type has grown by one entry (typed as `V[]`).
+   */
+  groupAggRow<Name extends string, V extends Val>(
+    name: Name,
+    fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V[],
+  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  groupAggRow(name: string, fn: any): any {
+    const step: GroupAggRowStep = { kind: "groupAggRow", name, fn: fn as AggRowFn };
+    return new EngineGroup([...this.#steps, step], this.#aggsTarget);
+  }
+
+  /**
+   * Runs all group steps against the supplied bound engines.
    * Does NOT call `evaluate()` on each engine — the caller controls that.
+   * Safe to call repeatedly with the same or different engine arrays.
    *
+   * @param engines - The {@link BoundEngine} instances to aggregate. Each must have
+   *                  already had its own `evaluate()` called.
    * @throws `{Error}` if a `.def()` name already exists in any engine's headers.
    */
-  evaluate(): void {
-    for (const engine of this.#engines) engine.resetGroupColumns();
+  evaluate(engines: BoundEngine[]): void {
+    for (const engine of engines) engine.resetGroupColumns();
 
     // Collect per-engine aggs: scalars → array, arrays → flat concat. Frozen for
     // the duration of this call — used as the donor-aggregate table for groupAgg/groupAggRow.
     const aggCols: Record<string, CellValue[]> = {};
-    for (const engine of this.#engines) {
+    for (const engine of engines) {
       for (const [name, value] of Object.entries(engine.aggs)) {
         if (Array.isArray(value)) {
           const arr = value as CellValue[];
@@ -938,7 +1025,7 @@ export class EngineGroup {
     const aggs: Record<string, CellValue | CellValue[]> = { ...aggCols };
 
     // Upfront duplicate-name validation for .def() steps — fails before any mutation
-    const headerSets = this.#engines.map((engine) => new Set(Object.keys(engine.cols)));
+    const headerSets = engines.map((engine) => new Set(Object.keys(engine.cols)));
     for (const step of this.#steps) {
       if (step.kind === "groupDef") {
         for (const headerSet of headerSets) {
@@ -953,7 +1040,7 @@ export class EngineGroup {
     let cols: Record<string, CellValue[]> | null = null;
     const buildCols = (): Record<string, CellValue[]> => {
       const merged: Record<string, CellValue[]> = {};
-      for (const engine of this.#engines) {
+      for (const engine of engines) {
         for (const [name, values] of Object.entries(engine.cols)) {
           merged[name] = name in merged ? merged[name].concat(values) : values.slice();
         }
@@ -974,7 +1061,7 @@ export class EngineGroup {
         this.#aggsTarget[step.name] = result;
       } else {
         cols = null; // row-level data is about to change; invalidate the merged-cols cache
-        this.#runGroupDef(step, aggs, defOffset);
+        this.#runGroupDef(step, aggs, defOffset, engines);
         defOffset++;
       }
     }
@@ -984,8 +1071,8 @@ export class EngineGroup {
     step: GroupDefStep,
     aggs: Record<string, CellValue | CellValue[]>,
     defOffset: number,
+    engines: BoundEngine[],
   ): void {
-    const engines = this.#engines;
     const engineCount = engines.length;
     for (let engineIndex = 0; engineIndex < engineCount; engineIndex++) {
       const accessor: EngineAccessor = (offset) => {

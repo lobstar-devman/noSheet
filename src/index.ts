@@ -1,6 +1,7 @@
 export { Engine, BoundEngine, EngineGroup } from "./engine.js";
 export type {
   TableToRow,
+  CollectedAggs,
   AbsoluteRowGet,
   EngineAccessor,
   GroupRow,
