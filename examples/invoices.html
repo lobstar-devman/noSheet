@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Stress Testing noSheet">
+  
+  <link rel="stylesheet" href="/css/prism.css">
+  <link id="theme-style" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css"><style>
+  pre code,
+  code {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+   
+  img {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  figcaption {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+
+   
+  nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    overflow: visible;
+    font-size: 1.40rem;
+  }
+
+  nav ul {
+    display: flex;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    gap: 0.5rem;
+  }
+
+  div.smaller {
+    font-size: 75%;
+  }
+
+</style>
+
+
+  <title>Invoice Example | noSheet</title><link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+</head>
+
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong>noSheet</strong></li>
+      </ul>
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/pages/">Documentation</a></li>
+      </ul>
+    </nav>
+
+  </header>
+
+  <main>
+
+<article>
+
+  <h1>Invoice example</h1>
+  <div>
+        <article x-data="engine(25, 10)">
+            <h3>Invoices</h3>
+            <div id="invoices"></div>
+            <template x-for="(invoice, invoice_index) in samples" :key="invoice_index">
+                <details name="invoice_accordion" open>
+                    <summary>Invoice <span x-text="invoice_index + 1"></span></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Item Cost</th>
+                                <th>Quantity</th>
+                                <th>Line Cost</th>
+                                <th>Line Offer</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(item, lineitem_index) in invoice" :key="lineitem_index">
+                                <tr :id="`${invoice_index}-row[${lineitem_index}]`">
+                                    <td>
+                                        <span x-text="item[0]"></span>
+                                    </td>
+
+                                    <td>
+                                        <input type="number" min="0" step="0.01"
+                                            :value="item[1]"
+                                            @change="updateLineItem(invoice_index, lineitem_index, 1, $el.value)"
+                                        >
+                                    </td>
+
+                                    <td>
+                                        <input type="number" min="0"
+                                            :value="item[2]"
+                                            @change="updateLineItem(invoice_index, lineitem_index, 2, $el.value)"
+                                        >
+                                    </td>
+                                    <td>
+                                        <span x-text="item[3].toFixed(2)"></span>
+                                    </td>
+                                    <td>
+                                        <span x-text="item[4].toFixed(2)"></span>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="!samples.length">
+                                <td colspan="5">No matching records found.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>                
+            </template>
+        </article>
+
+        <div>
+            <hr>
+            <h3>Facet:</h3>
+            <pre>
+                <code id="prism-1" class="language-javascript"></code>
+            </pre>
+        </div>
+<!-- JS Content -->
+<script src="/js/utils.js"></script>
+<script src="/js/simple_alpine_table.js"></script>
+<script src="/js/prism.js" data-manual></script>
+
+<script type="module">
+import {Engine} from "/nosheet.esm.js"
+
+function getRandomInt(min, max) {
+    min = Math.ceil(min);
+    max = Math.floor(max);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+const lineEngine = new Engine()
+    .def("line_cost", row => row.cost * row.qty)
+    .agg("total_cost", row => "sum(line_cost)")
+    .def("gross_margin", (row, aggs) => (row.offer - row.cost)/aggs.total_cost)
+
+function evaluateInvoice(inputRows) {
+    const headers = ["name", "cost", "qty", "offer"];
+    const rows = inputRows.map(r => [...r]);
+    lineEngine.evaluate(headers, rows);
+    return rows;
+}
+
+document.addEventListener('alpine:init', () => {
+
+    Alpine.data('engine', (maxRows, invoices) => ({
+
+        samples: [],
+        inputSamples: [],
+        init() {
+            this.inputSamples = Array.from({ length: invoices }, _ =>
+                Array.from({ length: getRandomInt(5, maxRows) }, (v, k) => {
+                    const cost = getRandomInt(1, 200) + (getRandomInt(1, 99) / 100);
+                    return [`Lineitem #${k}`, cost, getRandomInt(10, 90), Math.round(cost * 0.9 * 100) / 100];
+                })
+            );
+            this.samples = this.inputSamples.map(evaluateInvoice);
+        },
+        updateLineItem(invoiceIdx, itemIdx, fieldIdx, value) {
+            this.inputSamples[invoiceIdx][itemIdx][fieldIdx] = parseFloat(value) || 0;
+            this.samples[invoiceIdx] = evaluateInvoice(this.inputSamples[invoiceIdx]);
+        }
+    }));
+});
+</script>
+<!-- Alpine must load AFTER the alpine:init listener is registered -->
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous" defer></script>
+
+  </div>
+
+</article>
+</main>
+
+  <footer>
+    <p>&copy; 2025 LOBSTAR.</p>
+  </footer>
+
+</body>
+
+</html>
