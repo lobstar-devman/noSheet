@@ -213,6 +213,9 @@ function mathCompiler(expression) {
   return (scope) => compiled.evaluate(scope);
 };
 
+//-prism
+
+//Create the per-invoice engine
 const lineEngine = new Engine(mathCompiler)
     .def("line_cost", row => row.cost * row.qty)
     .agg("total_cost", "sum(line_cost)")
@@ -222,8 +225,7 @@ const lineEngine = new Engine(mathCompiler)
     .agg("total_mw", (cols) => math.sum(cols.weighted_margin))
     .def("margin_score", (row) => row.gross_margin < 0.3 ? '👎' : '👍');
 
-const boundEngines = [];
-
+//Create the invoice rollup group
 const invoiceGroup = new EngineGroup(lineEngine, mathCompiler)
     .agg("grand_qty", "sum(qty)")
     .groupAgg("grand_cost",   (aggCols) => math.sum(aggCols.total_cost))
@@ -231,6 +233,9 @@ const invoiceGroup = new EngineGroup(lineEngine, mathCompiler)
     .groupAgg("grand_margin", (_aggCols, aggs) => 1 - (aggs.grand_cost / aggs.grand_offer))
     .groupAggRow("invoice_gross_margin",    (aggCols) => aggCols.total_cost.map((tc, i) => 1 - (tc / aggCols.total_offer[i])))
     .groupAggRow("invoice_weighted_margin", (aggCols, aggs) => aggCols.total_cost.map(tc => tc / aggs.grand_cost));
+
+//action a change to an input column    
+const boundEngines = [];
 
 function evaluateInvoice(inputRows, idx) {
     const headers = ["name", "cost", "qty", "offer"];
@@ -240,6 +245,7 @@ function evaluateInvoice(inputRows, idx) {
     boundEngines[idx] = bound;
     return { rows, aggs: bound.aggs };
 }
+//-prism
 
 document.addEventListener('alpine:init', () => {
 
