@@ -7,12 +7,12 @@ function mathCompiler(expression) {
 }
 
 export const invoiceEngine = new Engine(mathCompiler)
-    .def("line_cost", row => row.cost * row.qty)
-    .agg("total_cost", "sum(line_cost)")
+    .def("line_cost", row => row.cost * row.qty)    // an example javascript expression
+    .agg("total_cost", "sum(line_cost)")            // an compileable mathsjs expression
     .agg("total_offer", "sum(offer)")
     .def("gross_margin", (row, aggs) => 1-(row.line_cost/row.offer))
     .def("weighted_margin", "line_cost/total_cost")
-    .agg("total_mw", (cols) => math.sum(cols.weighted_margin))
+    .agg("total_mw", (cols) => math.sum(cols.weighted_margin))  // an example using mathjs functions
     .def("margin_score", (row) => row.gross_margin < 0.3 ? '👎' : '👍');
 
 export function makeInvoiceGroup(aggsTarget) {
