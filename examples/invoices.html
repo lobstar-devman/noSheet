@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Stress Testing noSheet">
+  
+  <link rel="stylesheet" href="/css/prism.css">
+  <link id="theme-style" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css"><style>
+  pre code,
+  code {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+   
+  img {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  figcaption {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+
+   
+  nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    overflow: visible;
+    font-size: 1.40rem;
+  }
+
+  nav ul {
+    display: flex;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    gap: 0.5rem;
+  }
+
+  div.smaller {
+    font-size: 75%;
+  }
+
+</style>
+
+
+  <title>Invoice Example | noSheet</title><link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<script>
+const pctFormatter = new Intl.NumberFormat(undefined, {
+  style: 'percent',
+  maximumFractionDigits: 1
+});
+
+const currencyFormatter = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 2
+}) 
+</script>  
+</head>
+
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong>noSheet</strong></li>
+      </ul>
+      <ul>
+        <li><a href="/">Home</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+
+<article>
+
+  <h1>Invoice example</h1>
+  <div>
+        <article x-data="engine(25, 10)">
+            <h3>Invoices</h3>
+            <div id="invoices"></div>
+            <article>
+                    <table id="engine_group">
+                        <thead>
+                            <tr>
+                                <th>Total Quantity</th>
+                                <th>Total Cost</th>
+                                <th>Total Offer</th>
+                                <th>Gross Margin</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td x-text="currencyFormatter.format(groupAggs.grand_qty)"></td>
+                                <td x-text="currencyFormatter.format(groupAggs.grand_cost)"></td>
+                                <td x-text="currencyFormatter.format(groupAggs.grand_offer)"></td>
+                                <td x-text="groupAggs.grand_margin != null ? pctFormatter.format(groupAggs.grand_margin) : ''"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+            </article>
+            <template x-for="(invoice, invoice_index) in samples" :key="invoice_index">
+                <details name="invoice_accordion" open>
+                    <summary>
+                        Invoice <span x-text="invoice_index + 1"></span>
+                        &mdash; GM: <span x-text="groupAggs.invoice_gross_margin ? pctFormatter.format(groupAggs.invoice_gross_margin[invoice_index]) : ''"></span>
+                        &mdash; Weight: <span x-text="groupAggs.invoice_weighted_margin ? pctFormatter.format(groupAggs.invoice_weighted_margin[invoice_index]) : ''"></span>
+                    </summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Unit Cost</th>
+                                <th>Quantity</th>
+                                <th>Line Cost</th>
+                                <th>Line Offer</th>
+                                <th>Gross Margin</th>
+                                <th>Margin Weight</th>
+                                <th>Margin Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(item, lineitem_index) in invoice.rows" :key="lineitem_index">
+                                <tr :id="`${invoice_index}-row[${lineitem_index}]`">
+                                    <td>
+                                        <span x-text="item[0]"></span>
+                                    </td>
+
+                                    <td>
+                                        <input type="number" min="0" step="0.01"
+                                            :value="item[1]"
+                                            @input="updateLineItem(invoice_index, lineitem_index, 1, $el.value)"
+                                        >
+                                    </td>
+
+                                    <td>
+                                        <input type="number" min="1"
+                                            :value="item[2]"
+                                            @input="updateLineItem(invoice_index, lineitem_index, 2, $el.value)"
+                                        >
+                                    </td>
+                                    <td>
+                                        <span x-text="currencyFormatter.format(item[4])"></span>
+                                    </td>
+                                    <td>
+                                        <input type="number" min="1"
+                                            :value="item[3]"
+                                            @input="updateLineItem(invoice_index, lineitem_index, 3, $el.value)"
+                                        >
+                                    </td>
+                                    <td>
+                                        <span x-text="pctFormatter.format(item[5])"></span>
+                                    </td>
+                                    <td>
+                                        <span x-text="pctFormatter.format(item[6])"></span>
+                                    </td>                                                                        
+                                    <td>
+                                        <span x-text="item[7]"></span>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="!samples.length">
+                                <td colspan="5">No matching records found.</td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="3">Totals</th>
+                                <td x-text="invoice.aggs.total_cost.toFixed(2)"></td>
+                                <td x-text="invoice.aggs.total_offer.toFixed(2)"></td>
+                                <td></td>
+                                <td x-text="pctFormatter.format(invoice.aggs.total_mw)"></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </details>                
+            </template>
+        </article>
+
+        <div>
+            <hr>
+            <h3>Facet:</h3>
+            <pre>
+                <code src="/invoice-engine.ts" class="prism-fetch language-javascript"></code>
+            </pre>
+        </div>
+<!-- JS Content -->
+<script src="/js/utils.js"></script>
+<script src="/js/simple_alpine_table.js"></script>
+<script src="/js/prism.js" data-manual></script>
+
+<script type="module">
+import {invoiceEngine, makeInvoiceGroup} from "/js/invoice-engine.js"
+
+function getRandomInt(min, max) {
+    min = Math.ceil(min);
+    max = Math.floor(max);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+const boundEngines = [];
+let invoiceGroup;
+
+document.addEventListener('alpine:init', () => {
+
+    Alpine.data('engine', (maxRows, invoices) => ({
+
+        samples: [],
+        groupAggs: {},
+        init() {
+            invoiceGroup = makeInvoiceGroup(this.groupAggs);
+            const rawSamples = Array.from({ length: invoices }, _ =>
+                Array.from({ length: getRandomInt(5, maxRows) }, (v, k) => {
+                    const cost = getRandomInt(1, 200) + (getRandomInt(1, 99) / 100),
+                          qty  = getRandomInt(10, 90);
+                    return [
+                        `Lineitem #${k}`,
+                        cost,
+                        qty,                   //random qty
+                        Math.ceil((cost + getRandomInt(1, 200)) * qty)  //random offer price
+                    ];
+                })
+            );
+
+            this.samples = rawSamples.map(() => ({ rows: [], aggs: {} }));
+            rawSamples.forEach((inputRows, idx) => {
+                this.samples[idx].rows = inputRows.map(r => [...r]);
+                boundEngines[idx] = invoiceEngine.bind(
+                    ["name", "cost", "qty", "offer"],
+                    this.samples[idx].rows,
+                    this.samples[idx].aggs
+                );
+                boundEngines[idx].evaluate();
+            });
+
+            this._evalGroup();
+        },
+        _evalGroup() {
+            invoiceGroup.evaluate(boundEngines);
+        },
+        updateLineItem(invoiceIdx, itemIdx, fieldIdx, value) {
+            this.samples[invoiceIdx].rows[itemIdx][fieldIdx] = parseFloat(value) || 0;
+            boundEngines[invoiceIdx].evaluate();
+            this._evalGroup();
+        }
+    }));
+});
+</script>
+<!-- Alpine must load AFTER the alpine:init listener is registered -->
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous" defer></script>
+
+  </div>
+
+</article>
+</main>
+
+  <footer>
+    <p>&copy; 2025 LOBSTAR.</p>
+  </footer>
+
+</body>
+
+</html>
