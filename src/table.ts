@@ -1,4 +1,4 @@
-import type { CellValue, Row, RowMeta } from "./expr.js";
+import type { CellValue, Row, RowGet, RowMeta, UpstreamRows } from "./expr.js";
 import type { Definition } from "./definition.js";
 
 /**
@@ -32,26 +32,22 @@ export function applyDefinitions(table: Table, definitions: readonly Definition[
     }
 
     const column: CellValue[] = [];
-    const meta: RowMeta = {
-      rowIndex: 0,
-      rowCount,
-      defOffset,
-      colIndex: Object.keys(columns).length,
+
+    const buildAt = (idx: number): Record<string, CellValue> => {
+      const r: Record<string, CellValue> = {};
+      for (const [c, vals] of Object.entries(columns)) r[c] = vals[idx];
+      return r;
     };
 
     for (let i = 0; i < rowCount; i++) {
-      const row: Record<string, CellValue> = {};
+      const row: Row = {};
       for (const [colName, values] of Object.entries(columns)) {
         row[colName] = values[i];
       }
-      const get = (
+
+      const get: RowGet = (
         offsetOrFilter: number | ((r: Record<string, CellValue>) => boolean),
       ): Record<string, CellValue> | undefined => {
-        const buildAt = (idx: number): Record<string, CellValue> => {
-          const r: Record<string, CellValue> = {};
-          for (const [c, vals] of Object.entries(columns)) r[c] = vals[idx];
-          return r;
-        };
         if (typeof offsetOrFilter === "function") {
           for (let j = 0; j < rowCount; j++) {
             const r = buildAt(j);
@@ -63,9 +59,35 @@ export function applyDefinitions(table: Table, definitions: readonly Definition[
         if (target < 0 || target >= rowCount) return undefined;
         return buildAt(target);
       };
-      const rowWithGet: Row = { ...row, get };
-      meta.rowIndex = i;
-      column.push(fn(rowWithGet, {}, meta));
+
+      const upstream = (
+        filter?: (r: Record<string, CellValue>) => boolean,
+      ): UpstreamRows => {
+        const result: UpstreamRows = {};
+        for (let j = 0; j < i; j++) {
+          const r = buildAt(j);
+          if (!filter || filter(r)) {
+            for (const [k, v] of Object.entries(r)) {
+              if (!(k in result)) result[k] = [];
+              result[k].push(v);
+            }
+          }
+        }
+        return result;
+      };
+
+      const meta: RowMeta = {
+        rowIndex: i,
+        rowCount,
+        defOffset,
+        colIndex: Object.keys(columns).length,
+        tableIndex: 0,
+        tableCount: 1,
+        get,
+        upstream,
+      };
+
+      column.push(fn(row, {}, meta));
     }
 
     columns[name] = column;

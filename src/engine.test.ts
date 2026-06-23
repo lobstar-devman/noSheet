@@ -1,5 +1,5 @@
 import type { CellValue } from "./expr.js";
-import { Engine, EngineGroup } from "./engine.js";
+import { Engine } from "./engine.js";
 
 // Helper: build headers + rows from a column-keyed object for test readability.
 function toRows(data: Record<string, CellValue[]>): { headers: string[]; rows: CellValue[][] } {
@@ -246,6 +246,7 @@ describe("Engine — edge cases", () => {
     }).toThrow("does not match headers length");
   });
 });
+
 describe("Engine.evaluate — headerless object-row overload", () => {
   it("computes a def column and assigns it onto each object", () => {
     const rows = [
@@ -261,7 +262,7 @@ describe("Engine.evaluate — headerless object-row overload", () => {
     expect(rows[1]).toMatchObject({ cost: 40 });
   });
 
-  it("agg and aggRow work using object keys as column names", () => {
+  it("agg works using object keys as column names", () => {
     const rows = [
       { amount: 10 },
       { amount: 20 },
@@ -439,11 +440,11 @@ describe("BoundEngine — Engine.bind()", () => {
   });
 });
 
-describe("row.get() — offset access", () => {
+describe("meta.get() — offset access", () => {
   it("get(0) returns the current row", () => {
     const { headers, rows } = toRows({ x: [10, 20, 30] });
     new Engine<{ x: number[] }>()
-      .def("same", (row) => (row.get(0)?.["x"] ?? -1) as number)
+      .def("same", (_row, _aggs, meta) => (meta.get(0)?.["x"] ?? -1) as number)
       .evaluate(headers, rows);
     expect(col(headers, rows, "same")).toEqual([10, 20, 30]);
   });
@@ -451,7 +452,7 @@ describe("row.get() — offset access", () => {
   it("get(-1) returns the previous row (including current step's value)", () => {
     const { headers, rows } = toRows({ x: [1, 2, 3] });
     new Engine<{ x: number[] }>()
-      .def("cumsum", (row) => row.x + ((row.get(-1)?.["cumsum"] ?? 0) as number))
+      .def("cumsum", (row, _aggs, meta) => row.x + ((meta.get(-1)?.["cumsum"] ?? 0) as number))
       .evaluate(headers, rows);
     expect(col(headers, rows, "cumsum")).toEqual([1, 3, 6]);
   });
@@ -459,7 +460,7 @@ describe("row.get() — offset access", () => {
   it("get(1) returns the next row without the current step's value", () => {
     const { headers, rows } = toRows({ x: [10, 20, 30] });
     new Engine<{ x: number[] }>()
-      .def("next_x", (row) => (row.get(1)?.["x"] ?? -1) as number)
+      .def("next_x", (_row, _aggs, meta) => (meta.get(1)?.["x"] ?? -1) as number)
       .evaluate(headers, rows);
     expect(col(headers, rows, "next_x")).toEqual([20, 30, -1]);
   });
@@ -467,8 +468,8 @@ describe("row.get() — offset access", () => {
   it("get() returns undefined when offset is out of bounds", () => {
     const { headers, rows } = toRows({ x: [5] });
     new Engine<{ x: number[] }>()
-      .def("prev", (row) => (row.get(-1)?.["x"] ?? 99) as number)
-      .def("next", (row) => (row.get(1)?.["x"] ?? 88) as number)
+      .def("prev", (_row, _aggs, meta) => (meta.get(-1)?.["x"] ?? 99) as number)
+      .def("next", (_row, _aggs, meta) => (meta.get(1)?.["x"] ?? 88) as number)
       .evaluate(headers, rows);
     expect(col(headers, rows, "prev")).toEqual([99]);
     expect(col(headers, rows, "next")).toEqual([88]);
@@ -477,21 +478,20 @@ describe("row.get() — offset access", () => {
   it("get(1) does not expose the current step's column on downstream rows", () => {
     const { headers, rows } = toRows({ x: [1, 2, 3] });
     new Engine<{ x: number[] }>()
-      .def("doubled", (row) => {
-        const next = row.get(1);
+      .def("doubled", (_row, _aggs, meta) => {
+        const next = meta.get(1);
         return next !== undefined && "doubled" in next ? 1 : 0;
       })
       .evaluate(headers, rows);
-    // No downstream row should have 'doubled' during this step
     expect(col(headers, rows, "doubled")).toEqual([0, 0, 0]);
   });
 });
 
-describe("row.get() — filter access", () => {
+describe("meta.get() — filter access", () => {
   it("get(filter) returns the first row matching the predicate", () => {
     const { headers, rows } = toRows({ id: [1, 2, 3], val: [10, 20, 30] });
     new Engine<{ id: number[]; val: number[] }>()
-      .def("found", (row) => (row.get((r) => r["id"] === 2)?.["val"] ?? -1) as number)
+      .def("found", (_row, _aggs, meta) => (meta.get((r) => r["id"] === 2)?.["val"] ?? -1) as number)
       .evaluate(headers, rows);
     expect(col(headers, rows, "found")).toEqual([20, 20, 20]);
   });
@@ -499,17 +499,17 @@ describe("row.get() — filter access", () => {
   it("get(filter) returns undefined when no row matches", () => {
     const { headers, rows } = toRows({ x: [1, 2, 3] });
     new Engine<{ x: number[] }>()
-      .def("found", (row) => (row.get((r) => r.x === 99) ? 1 : 0))
+      .def("found", (_row, _aggs, meta) => (meta.get((r) => r.x === 99) ? 1 : 0))
       .evaluate(headers, rows);
     expect(col(headers, rows, "found")).toEqual([0, 0, 0]);
   });
 });
 
-describe("row.get() — object-row path", () => {
+describe("meta.get() — object-row path", () => {
   it("get(-1) returns the previous row in headerless object path", () => {
     const rows = [{ x: 1 }, { x: 2 }, { x: 3 }];
     new Engine<{ x: number[] }>()
-      .def("cumsum", (row) => row.x + ((row.get(-1)?.["cumsum"] ?? 0) as number))
+      .def("cumsum", (row, _aggs, meta) => row.x + ((meta.get(-1)?.["cumsum"] ?? 0) as number))
       .evaluate(rows);
     const asMap = rows as Array<Record<string, number>>;
     expect(asMap.map((r) => r["cumsum"])).toEqual([1, 3, 6]);
@@ -518,19 +518,19 @@ describe("row.get() — object-row path", () => {
   it("get(filter) works in headerless object path", () => {
     const rows = [{ id: 1, v: 10 }, { id: 2, v: 20 }, { id: 3, v: 30 }];
     new Engine<{ id: number[]; v: number[] }>()
-      .def("ref", (row) => (row.get((r) => r["id"] === 2)?.["v"] ?? -1) as number)
+      .def("ref", (_row, _aggs, meta) => (meta.get((r) => r["id"] === 2)?.["v"] ?? -1) as number)
       .evaluate(rows);
     const asMap = rows as Array<Record<string, number>>;
     expect(asMap.map((r) => r["ref"])).toEqual([20, 20, 20]);
   });
 });
 
-describe("row.get() — BoundEngine", () => {
+describe("meta.get() — BoundEngine", () => {
   it("get(-1) works in BoundEngine and accumulates correctly across re-evaluate", () => {
     const headers = ["x"];
     const rows: CellValue[][] = [[1], [2], [3]];
     const ctx = new Engine<{ x: number[] }>()
-      .def("cumsum", (row) => row.x + ((row.get(-1)?.["cumsum"] ?? 0) as number))
+      .def("cumsum", (row, _aggs, meta) => row.x + ((meta.get(-1)?.["cumsum"] ?? 0) as number))
       .bind(headers, rows);
 
     ctx.evaluate();
@@ -539,6 +539,81 @@ describe("row.get() — BoundEngine", () => {
     rows[0][0] = 10;
     ctx.evaluate();
     expect(col(headers, rows, "cumsum")).toEqual([10, 12, 15]);
+  });
+});
+
+describe("meta.upstream() — upstream row access", () => {
+  it("returns empty UpstreamRows object for the first row", () => {
+    const { headers, rows } = toRows({ x: [10, 20, 30] });
+    let firstUpstream: Record<string, CellValue[]> | undefined;
+    new Engine<{ x: number[] }>()
+      .def("check", (_row, _aggs, meta) => {
+        if (meta.rowIndex === 0) firstUpstream = meta.upstream();
+        return 0;
+      })
+      .evaluate(headers, rows);
+    expect(firstUpstream).toEqual({});
+  });
+
+  it("returns column arrays for all prior rows", () => {
+    const { headers, rows } = toRows({ x: [1, 2, 3] });
+    const captured: Array<Record<string, CellValue[]>> = [];
+    new Engine<{ x: number[] }>()
+      .def("tag", (_row, _aggs, meta) => {
+        captured.push(meta.upstream());
+        return 0;
+      })
+      .evaluate(headers, rows);
+    expect(captured[0]).toEqual({});
+    expect(captured[1]).toEqual({ x: [1], tag: [0] });
+    expect(captured[2]).toEqual({ x: [1, 2], tag: [0, 0] });
+  });
+
+  it("enables rolling sum of prior values using upstream", () => {
+    const { headers, rows } = toRows({ x: [1, 2, 3, 4] });
+    new Engine<{ x: number[] }>()
+      .def("cumsum", (row, _aggs, meta) => {
+        const up = meta.upstream();
+        const priorSums = (up["cumsum"] ?? []) as number[];
+        const total = priorSums.reduce((a, b) => a + b, 0);
+        return row.x + total;
+      })
+      .evaluate(headers, rows);
+    // row 0: 1, row 1: 2+1=3, row 2: 3+1+3=7... wait
+    // cumsum[0]=1, cumsum[1]=2+1=3, cumsum[2]=3+1+3=7... no
+    // cumsum uses prior cumsum values, not prior x values
+    // cumsum[0]=1 (no prior), cumsum[1]=2+cumsum[0]=3, cumsum[2]=3+cumsum[0]+cumsum[1]=7... that's sum of all cumsums
+    // Actually: cumsum[0]=1, cumsum[1]=2+1=3, cumsum[2]=3+1+3=7, cumsum[3]=4+1+3+7=15
+    expect(col(headers, rows, "cumsum")).toEqual([1, 3, 7, 15]);
+  });
+
+  it("filter-based upstream returns only matching rows", () => {
+    const { headers, rows } = toRows({ x: [1, 2, 3, 4, 5] });
+    new Engine<{ x: number[] }>()
+      .def("sumEven", (_row, _aggs, meta) => {
+        const up = meta.upstream((r) => (r["x"] as number) % 2 === 0);
+        return ((up["x"] ?? []) as number[]).reduce((a, b) => a + b, 0);
+      })
+      .evaluate(headers, rows);
+    // For each row, sum of prior even x values
+    // row 0 (x=1): no prior → 0; row 1 (x=2): prior x=[1], no even → 0
+    // row 2 (x=3): prior x=[1,2], even=[2] → 2; row 3 (x=4): prior x=[1,2,3], even=[2] → 2
+    // row 4 (x=5): prior x=[1,2,3,4], even=[2,4] → 6
+    expect(col(headers, rows, "sumEven")).toEqual([0, 0, 2, 2, 6]);
+  });
+
+  it("works in BoundEngine", () => {
+    const headers = ["v"];
+    const rows: CellValue[][] = [[10], [20], [30]];
+    const ctx = new Engine<{ v: number[] }>()
+      .def("runningMax", (row, _aggs, meta) => {
+        const up = meta.upstream();
+        const priors = (up["v"] ?? []) as number[];
+        return Math.max(row.v, ...priors);
+      })
+      .bind(headers, rows);
+    ctx.evaluate();
+    expect(col(headers, rows, "runningMax")).toEqual([10, 20, 30]);
   });
 });
 
@@ -553,12 +628,12 @@ describe("RowMeta — intrinsic row/column metadata", () => {
     expect(col(headers, rows, "count")).toEqual([3, 3, 3]);
   });
 
-  it("defOffset counts .def() steps only, skipping .agg() and .aggRow()", () => {
+  it("defOffset counts .def() steps only, skipping .agg() and .cardinal()", () => {
     const { headers, rows } = toRows({ x: [1, 2] });
     new Engine<{ x: number[] }>()
       .def("a", (_row, _aggs, meta) => meta.defOffset)
       .agg("total", (cols) => (cols.x as number[]).reduce((s, v) => s + v, 0))
-      .aggRow("share", (cols, aggs) => (cols.x as number[]).map((v) => v / aggs.total))
+      .cardinal("mean", (cols) => (cols.x as number[]).reduce((s, v) => s + (v as number), 0) / cols.x.length)
       .def("b", (_row, _aggs, meta) => meta.defOffset)
       .evaluate(headers, rows);
     expect(col(headers, rows, "a")).toEqual([0, 0]);
@@ -574,6 +649,16 @@ describe("RowMeta — intrinsic row/column metadata", () => {
     expect(col(headers, rows, "a")).toEqual([2]);
     expect(col(headers, rows, "b")).toEqual([3]);
     expect(headers).toEqual(["x", "y", "a", "b"]);
+  });
+
+  it("tableIndex is 0 and tableCount is 1 in single-table mode", () => {
+    const { headers, rows } = toRows({ x: [1, 2] });
+    new Engine<{ x: number[] }>()
+      .def("ti", (_row, _aggs, meta) => meta.tableIndex)
+      .def("tc", (_row, _aggs, meta) => meta.tableCount)
+      .evaluate(headers, rows);
+    expect(col(headers, rows, "ti")).toEqual([0, 0]);
+    expect(col(headers, rows, "tc")).toEqual([1, 1]);
   });
 
   it("a real column named 'rowIndex' is not masked by the meta argument", () => {
@@ -607,231 +692,436 @@ describe("RowMeta — intrinsic row/column metadata", () => {
   });
 });
 
-describe("EngineGroup", () => {
-  // Shared engine: line_cost per row, total_cost as scalar agg
+describe("AggMeta — per-aggregate metadata in single-table mode", () => {
+  it("tableIndex is 0 and tableCount is 1", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[1], [2], [3]];
+    let capturedTableIndex = -1;
+    let capturedTableCount = -1;
+
+    new Engine<{ x: number[] }>()
+      .agg("total", (cols, _aggs, aggMeta) => {
+        capturedTableIndex = aggMeta.tableIndex;
+        capturedTableCount = aggMeta.tableCount;
+        return cols.x.reduce((a, b) => a + b, 0);
+      })
+      .evaluate(headers, rows);
+
+    expect(capturedTableIndex).toBe(0);
+    expect(capturedTableCount).toBe(1);
+  });
+
+  it("aggMeta.get(0) returns the current table's aggs", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[1], [2], [3]];
+    let got: Record<string, CellValue | CellValue[]> | undefined;
+
+    new Engine<{ x: number[] }>()
+      .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
+      .agg("check", (_cols, aggs, aggMeta) => {
+        got = aggMeta.get(0);
+        return 0;
+      })
+      .evaluate(headers, rows);
+
+    expect((got as Record<string, CellValue>)["total"]).toBe(6);
+  });
+
+  it("aggMeta.get(-1) returns undefined in single-table mode", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[1]];
+    let got: Record<string, CellValue | CellValue[]> | undefined = { sentinel: 1 };
+
+    new Engine<{ x: number[] }>()
+      .agg("total", (_cols, _aggs, aggMeta) => {
+        got = aggMeta.get(-1);
+        return 0;
+      })
+      .evaluate(headers, rows);
+
+    expect(got).toBeUndefined();
+  });
+
+  it("aggMeta.upstream() returns empty in single-table mode", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[1]];
+    let up: Record<string, CellValue[]> = { sentinel: [1] };
+
+    new Engine<{ x: number[] }>()
+      .agg("total", (_cols, _aggs, aggMeta) => {
+        up = aggMeta.upstream();
+        return 0;
+      })
+      .evaluate(headers, rows);
+
+    expect(up).toEqual({});
+  });
+});
+
+describe("Engine.cardinal() — single-table mode", () => {
+  it("runs once and stores result in aggs", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[1], [2], [3]];
+
+    new Engine<{ x: number[] }>()
+      .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
+      .cardinal("doubled_total", (cols, aggs) => (aggs.total as number[])[0] * 2)
+      .evaluate(headers, rows);
+
+    // No column added, just verify no error thrown
+    expect(headers).toEqual(["x"]);
+  });
+
+  it("cardinal result is available in BoundEngine.aggs", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[1], [2], [3]];
+    const ctx = new Engine<{ x: number[] }>()
+      .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
+      .cardinal("doubled_total", (_cols, aggs) => (aggs.total as number[])[0] * 2)
+      .bind(headers, rows);
+
+    ctx.evaluate();
+
+    expect(ctx.aggs["total"]).toBe(6);
+    expect(ctx.aggs["doubled_total"]).toBe(12);
+  });
+
+  it("subsequent def steps can access cardinal via aggs", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[1], [2], [3]];
+
+    new Engine<{ x: number[] }>()
+      .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
+      .cardinal("doubled_total", (_cols, aggs) => (aggs.total as number[])[0] * 2)
+      .def("share", (row, aggs) => row.x / aggs.total)
+      .evaluate(headers, rows);
+
+    expect(col(headers, rows, "share")[0]).toBeCloseTo(1 / 6);
+    expect(col(headers, rows, "share")[2]).toBeCloseTo(3 / 6);
+  });
+
+  it("cardinals accumulate in declaration order for subsequent cardinals", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[1], [2], [3]];
+    const ctx = new Engine<{ x: number[] }>()
+      .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
+      .cardinal("doubled", (_cols, aggs) => (aggs.total as number[])[0] * 2)
+      .cardinal("quadrupled", (_cols, _aggs, cards) => (cards.doubled as number) * 2)
+      .bind(headers, rows);
+
+    ctx.evaluate();
+
+    expect(ctx.aggs["doubled"]).toBe(12);
+    expect(ctx.aggs["quadrupled"]).toBe(24);
+  });
+});
+
+describe("ChainedBoundEngine — bindX() single-table chaining", () => {
   const invoiceEngine = new Engine<{ cost: number[]; qty: number[] }>()
     .def("line_cost", (r) => r.cost * r.qty)
     .agg("total_cost", (cols) => (cols.line_cost as number[]).reduce((a, b) => a + b, 0));
 
-  it("grand_total sums per-engine scalar aggs into an array then reduces", () => {
-    // invoice1: 10*2 + 20*3 = 80, invoice2: 5*4 + 15*1 = 35
-    const aggs1: Record<string, CellValue | CellValue[]> = {};
-    const aggs2: Record<string, CellValue | CellValue[]> = {};
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]], aggs1);
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]], aggs2);
-    inv1.evaluate();
-    inv2.evaluate();
+  it("cascade mode auto-evaluates upstream before running own steps", () => {
+    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    // bound NOT evaluated yet
 
-    const groupAggs: Record<string, CellValue | CellValue[]> = {};
-    new EngineGroup(invoiceEngine, groupAggs)
-      .agg("grand_total", (_, aggs) =>
-        (aggs.total_cost as number[]).reduce((a, b) => a + b, 0),
-      )
-      .evaluate([inv1, inv2]);
+    const chained = new Engine<{ line_cost: number[]; cost: number[]; qty: number[] }>()
+      .def("doubled", (r) => (r.line_cost as number) * 2)
+      .bindX(bound);
 
-    expect(aggs1["total_cost"]).toBe(80);
-    expect(aggs2["total_cost"]).toBe(35);
-    expect(groupAggs["grand_total"]).toBe(115);
+    chained.evaluate(); // cascade: evaluates bound first
+
+    expect(bound.cols["line_cost"]).toEqual([20, 60]);
+    expect(chained.cols["doubled"]).toEqual([40, 120]);
   });
 
-  it("all_cols concatenates column data from all engines", () => {
+  it("manual mode skips upstream evaluate", () => {
+    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [5, 4]]);
+    bound.evaluate();
+
+    const chained = new Engine<{ line_cost: number[]; cost: number[]; qty: number[] }>()
+      .agg("chain_total", (cols) => (cols.line_cost as number[]).reduce((a, b) => a + b, 0))
+      .bindX(bound);
+
+    chained.evaluate("manual"); // does NOT re-evaluate bound
+    expect(chained.aggs["chain_total"]).toBeUndefined();
+    // chainedBoundEngine.aggs returns cardinalsTarget, not agg results
+    // agg results go into upstream.aggs:
+    expect(bound.aggs["chain_total"]).toBe(40); // 20 + 20
+  });
+
+  it("second evaluate is idempotent — does not double-append columns", () => {
+    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const chained = new Engine<{ line_cost: number[]; cost: number[]; qty: number[] }>()
+      .def("doubled", (r) => (r.line_cost as number) * 2)
+      .bindX(bound);
+
+    chained.evaluate();
+    chained.evaluate();
+
+    expect(Object.keys(bound.cols)).toEqual(["cost", "qty", "line_cost", "doubled"]);
+  });
+
+  it("rowCount reflects the upstream's row count", () => {
+    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3], [5, 1]]);
+    const chained = new Engine<{ cost: number[] }>().bindX(bound);
+    chained.evaluate();
+    expect(chained.rowCount).toBe(3);
+  });
+
+  it("cols returns the upstream's columns (including chained def columns)", () => {
+    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const chained = new Engine<{ line_cost: number[] }>()
+      .def("tag", () => 1)
+      .bindX(bound);
+    chained.evaluate();
+
+    const c = chained.cols;
+    expect(c["cost"]).toEqual([10, 20]);
+    expect(c["line_cost"]).toEqual([20, 60]);
+    expect(c["tag"]).toEqual([1, 1]);
+  });
+});
+
+describe("ChainedBoundEngine — bindX() multi-table", () => {
+  const invoiceEngine = new Engine<{ cost: number[]; qty: number[] }>()
+    .def("line_cost", (r) => r.cost * r.qty)
+    .agg("total_cost", (cols) => (cols.line_cost as number[]).reduce((a, b) => a + b, 0));
+
+  it("cardinal sums per-table scalar aggs across tables", () => {
+    // inv1: total_cost = 10*2 + 20*3 = 80
+    // inv2: total_cost = 5*4 + 15*1 = 35
     const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]);
     inv1.evaluate();
     inv2.evaluate();
 
-    const groupAggs: Record<string, CellValue | CellValue[]> = {};
-    new EngineGroup(invoiceEngine, groupAggs)
-      .agg("total_qty", (cols) => (cols.qty as number[]).reduce((a, b) => a + b, 0))
-      .agg("total_lines", (cols) => cols.qty.length)
-      .evaluate([inv1, inv2]);
+    const cardinals: Record<string, CellValue> = {};
+    const chained = new Engine<{ cost: number[] }>()
+      .cardinal("grand_total", (_cols, aggs) =>
+        (aggs.total_cost as number[]).reduce((a, b) => a + b, 0),
+      )
+      .bindX([inv1, inv2], cardinals);
 
-    expect(groupAggs["total_qty"]).toBe(10);  // 2+3+4+1
-    expect(groupAggs["total_lines"]).toBe(4); // 2 rows × 2 invoices
+    chained.evaluate("manual");
+
+    expect(cardinals["grand_total"]).toBe(115);
+    expect(chained.aggs["grand_total"]).toBe(115);
+    expect(chained.aggs).toBe(cardinals);
   });
 
-  it("later group steps can reference earlier group step results", () => {
+  it("agg step runs per table and writes result to each upstream.aggs", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const chained = new Engine<{ cost: number[]; qty: number[] }>()
+      .agg("total_qty", (cols) => (cols.qty as number[]).reduce((a, b) => a + b, 0))
+      .bindX([inv1, inv2]);
+
+    chained.evaluate("manual");
+
+    expect(inv1.aggs["total_qty"]).toBe(5);  // 2 + 3
+    expect(inv2.aggs["total_qty"]).toBe(4);  // 4
+  });
+
+  it("later cardinal can reference earlier cardinal via cards parameter", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost = 80
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]); // total_cost = 35
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const cardinals: Record<string, CellValue> = {};
+    const chained = new Engine<{ cost: number[] }>()
+      .cardinal("grand_cost", (_cols, aggs) =>
+        (aggs.total_cost as number[]).reduce((a, b) => a + b, 0),
+      )
+      .cardinal("grand_margin", (_cols, _aggs, cards) => (cards.grand_cost as number) * 0.1)
+      .bindX([inv1, inv2], cardinals);
+
+    chained.evaluate("manual");
+
+    expect(cardinals["grand_cost"]).toBe(115);
+    expect(cardinals["grand_margin"]).toBeCloseTo(11.5);
+  });
+
+  it("def appends columns to every upstream table", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const chained = new Engine<{ line_cost: number[] }>()
+      .def("doubled", (r) => (r.line_cost as number) * 2)
+      .bindX([inv1, inv2]);
+
+    chained.evaluate("manual");
+
+    expect(inv1.cols["doubled"]).toEqual([40, 120]);
+    expect(inv2.cols["doubled"]).toEqual([40]);
+  });
+
+  it("def meta.tableIndex and tableCount reflect multi-table context", () => {
     const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[20, 3]]);
     inv1.evaluate();
     inv2.evaluate();
 
-    const groupAggs: Record<string, CellValue | CellValue[]> = {};
-    new EngineGroup(invoiceEngine, groupAggs)
-      .agg("grand_total", (_, aggs) =>
+    const chained = new Engine<{ cost: number[] }>()
+      .def("tIdx", (_row, _aggs, meta) => meta.tableIndex)
+      .def("tCount", (_row, _aggs, meta) => meta.tableCount)
+      .bindX([inv1, inv2]);
+
+    chained.evaluate("manual");
+
+    expect(inv1.cols["tIdx"]).toEqual([0]);
+    expect(inv2.cols["tIdx"]).toEqual([1]);
+    expect(inv1.cols["tCount"]).toEqual([2]);
+    expect(inv2.cols["tCount"]).toEqual([2]);
+  });
+
+  it("cols getter returns merged columns from all upstreams", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const chained = new Engine<{ cost: number[] }>().bindX([inv1, inv2]);
+    chained.evaluate("manual");
+
+    expect(chained.cols["cost"]).toEqual([10, 20, 5]);
+    expect(chained.cols["line_cost"]).toEqual([20, 60, 20]);
+  });
+
+  it("rowCount is total rows across all upstreams", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
+    inv1.evaluate();
+    inv2.evaluate();
+
+    const chained = new Engine<{ cost: number[] }>().bindX([inv1, inv2]);
+    chained.evaluate("manual");
+
+    expect(chained.rowCount).toBe(3);
+  });
+
+  it("cascade evaluate auto-evaluates all upstreams", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
+    // Do NOT call evaluate on upstreams manually
+
+    const cardinals: Record<string, CellValue> = {};
+    const chained = new Engine<{ cost: number[] }>()
+      .cardinal("grand_total", (_cols, aggs) =>
         (aggs.total_cost as number[]).reduce((a, b) => a + b, 0),
       )
-      .agg("avg_invoice", (_, aggs) => aggs.grand_total / 2)
-      .evaluate([inv1, inv2]);
+      .bindX([inv1, inv2], cardinals);
 
-    expect(groupAggs["grand_total"]).toBe(80); // 20 + 60
-    expect(groupAggs["avg_invoice"]).toBe(40);
+    chained.evaluate(); // cascade: auto-evaluates inv1 and inv2
+
+    expect(inv1.aggs["total_cost"]).toBe(80);
+    expect(inv2.aggs["total_cost"]).toBe(20);
+    expect(cardinals["grand_total"]).toBe(100);
   });
 
-  it("group.aggs is the same reference as the external object", () => {
-    const external: Record<string, CellValue | CellValue[]> = {};
-    const inv = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
-    inv.evaluate();
-    const group = new EngineGroup(invoiceEngine, external).agg("g", (_, aggs) => aggs.total_cost);
-    group.evaluate([inv]);
-    expect(group.aggs).toBe(external);
-  });
-
-  it("BoundEngine.cols exposes all computed columns after evaluate", () => {
-    const inv = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
-    inv.evaluate();
-    expect(inv.cols["line_cost"]).toEqual([20, 60]);
-    expect(inv.cols["cost"]).toEqual([10, 20]);
-  });
-
-  it("groupAgg treats the per-engine collected aggregate table as the donor table", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost = 80
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]); // total_cost = 35
+  it("repeated evaluate() calls are idempotent", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[20, 3]]);
     inv1.evaluate();
     inv2.evaluate();
 
-    const groupAggs: Record<string, CellValue | CellValue[]> = {};
-    new EngineGroup(invoiceEngine, groupAggs)
-      .groupAgg(
-        "avg_total_cost",
-        (aggCols) =>
-          (aggCols.total_cost as number[]).reduce((a, b) => a + b, 0) /
-          aggCols.total_cost.length,
-      )
-      .evaluate([inv1, inv2]);
+    const chained = new Engine<{ line_cost: number[] }>()
+      .def("tag", () => 1)
+      .bindX([inv1, inv2]);
 
-    expect(groupAggs["avg_total_cost"]).toBe(57.5); // (80 + 35) / 2
+    chained.evaluate("manual");
+    chained.evaluate("manual");
+
+    expect(Object.keys(inv1.cols)).toEqual(["cost", "qty", "line_cost", "tag"]);
+    expect(Object.keys(inv2.cols)).toEqual(["cost", "qty", "line_cost", "tag"]);
   });
 
-  it("groupAggRow computes one value per engine, indexable by engineIndex", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost = 80
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]); // total_cost = 35
+  it("later agg sees cardinal written to upstream.aggs", () => {
+    // cardinal writes its result to all upstream.aggs;
+    // a subsequent .agg() step should see it via aggs parameter
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost=80
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]); // total_cost=35
     inv1.evaluate();
     inv2.evaluate();
 
-    const groupAggs: Record<string, CellValue | CellValue[]> = {};
-    new EngineGroup(invoiceEngine, groupAggs)
-      .groupAgg("grand_total", (aggCols) =>
-        (aggCols.total_cost as number[]).reduce((a, b) => a + b, 0),
+    const chained = new Engine<{ cost: number[] }>()
+      .cardinal("grand_cost", (_cols, aggs) =>
+        (aggs.total_cost as number[]).reduce((a, b) => a + b, 0),
       )
-      .groupAggRow("share", (aggCols, aggs) =>
-        (aggCols.total_cost as number[]).map((v) => v / aggs.grand_total),
-      )
-      .evaluate([inv1, inv2]);
+      .agg("share", (_cols, aggs) => {
+        const upAggs = aggs as Record<string, CellValue>;
+        return (upAggs["total_cost"] as number) / (upAggs["grand_cost"] as number);
+      })
+      .bindX([inv1, inv2]);
 
-    expect(groupAggs["grand_total"]).toBe(115);
-    expect(groupAggs["share"]).toEqual([80 / 115, 35 / 115]);
+    chained.evaluate("manual");
+
+    expect(inv1.aggs["share"]).toBeCloseTo(80 / 115);
+    expect(inv2.aggs["share"]).toBeCloseTo(35 / 115);
   });
 
-  describe("EngineGroup.def()", () => {
-    it("appends a column to every engine's own donor table", () => {
-      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
-      const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
-      inv1.evaluate();
-      inv2.evaluate();
+  it("aggMeta.tableIndex reflects table processing order", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
+    inv1.evaluate();
+    inv2.evaluate();
 
-      new EngineGroup(invoiceEngine)
-        .def("tag", (_row, _aggs, meta) => `e${String(meta.engineIndex)}-r${String(meta.rowIndex)}`)
-        .evaluate([inv1, inv2]);
+    const capturedIndices: number[] = [];
+    const chained = new Engine<{ cost: number[] }>()
+      .agg("check", (_cols, _aggs, aggMeta) => {
+        capturedIndices.push(aggMeta.tableIndex);
+        return 0;
+      })
+      .bindX([inv1, inv2]);
 
-      expect(inv1.cols["tag"]).toEqual(["e0-r0", "e0-r1"]);
-      expect(inv2.cols["tag"]).toEqual(["e1-r0"]);
-    });
+    chained.evaluate("manual");
+    expect(capturedIndices).toEqual([0, 1]);
+  });
 
-    it("meta.engineCount reflects the total number of engines in the group", () => {
-      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
-      const inv2 = invoiceEngine.bind(["cost", "qty"], [[20, 3]]);
-      inv1.evaluate();
-      inv2.evaluate();
+  it("aggMeta.get(0) returns current table's aggs, get(-1) returns previous table's aggs", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost=80
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]); // total_cost=20
+    inv1.evaluate();
+    inv2.evaluate();
 
-      new EngineGroup(invoiceEngine)
-        .def("engineCount", (_row, _aggs, meta) => meta.engineCount)
-        .evaluate([inv1, inv2]);
+    const inv2PrevAggs: Array<Record<string, CellValue | CellValue[]> | undefined> = [];
+    const chained = new Engine<{ cost: number[] }>()
+      .agg("check", (_cols, _aggs, aggMeta) => {
+        if (aggMeta.tableIndex === 1) inv2PrevAggs.push(aggMeta.get(-1));
+        return 0;
+      })
+      .bindX([inv1, inv2]);
 
-      expect(inv1.cols["engineCount"]).toEqual([2]);
-      expect(inv2.cols["engineCount"]).toEqual([2]);
-    });
+    chained.evaluate("manual");
+    expect(inv2PrevAggs[0]).toBeDefined();
+    expect((inv2PrevAggs[0] as Record<string, CellValue>)["total_cost"]).toBe(80);
+  });
 
-    it("row.engine(offset).get(n) reads an absolute row from a sibling engine's table", () => {
-      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
-      const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
-      inv1.evaluate();
-      inv2.evaluate();
+  it("aggMeta.upstream() returns prior tables' aggs as arrays", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost=80
+    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]); // total_cost=20
+    const inv3 = invoiceEngine.bind(["cost", "qty"], [[15, 1]]); // total_cost=15
+    inv1.evaluate();
+    inv2.evaluate();
+    inv3.evaluate();
 
-      new EngineGroup(invoiceEngine)
-        .def("prevFirstCost", (row) => row.engine(-1)?.get(0)?.["cost"] ?? -1)
-        .evaluate([inv1, inv2]);
+    let capturedUpstream: Record<string, CellValue[]> | undefined;
+    const chained = new Engine<{ cost: number[] }>()
+      .agg("check", (_cols, _aggs, aggMeta) => {
+        if (aggMeta.tableIndex === 2) capturedUpstream = aggMeta.upstream();
+        return 0;
+      })
+      .bindX([inv1, inv2, inv3]);
 
-      expect(inv1.cols["prevFirstCost"]).toEqual([-1, -1]); // no engine before inv1
-      expect(inv2.cols["prevFirstCost"]).toEqual([10]); // inv1's first row's cost
-    });
-
-    it("row.engine(offset).aggs reads a sibling engine's donor aggregate", () => {
-      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost = 80
-      const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
-      inv1.evaluate();
-      inv2.evaluate();
-
-      new EngineGroup(invoiceEngine)
-        .def("prevTotal", (row) => row.engine(-1)?.aggs["total_cost"] ?? -1)
-        .evaluate([inv1, inv2]);
-
-      expect(inv1.cols["prevTotal"]).toEqual([-1, -1]);
-      expect(inv2.cols["prevTotal"]).toEqual([80]);
-    });
-
-    it("aggs inside .def() is the group's running map, not the current engine's own aggs", () => {
-      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]); // total_cost = 20
-      inv1.evaluate();
-
-      const groupAggs: Record<string, CellValue | CellValue[]> = {};
-      new EngineGroup(invoiceEngine, groupAggs)
-        .groupAgg("grand_total", (aggCols) => (aggCols.total_cost as number[])[0])
-        .def("seenGrandTotal", (_row, aggs) => aggs.grand_total)
-        .evaluate([inv1]);
-
-      expect(inv1.cols["seenGrandTotal"]).toEqual([20]);
-    });
-
-    it("a later .agg() sees columns appended by an earlier group .def()", () => {
-      const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2]]);
-      const inv2 = invoiceEngine.bind(["cost", "qty"], [[20, 3]]);
-      inv1.evaluate();
-      inv2.evaluate();
-
-      const groupAggs: Record<string, CellValue | CellValue[]> = {};
-      new EngineGroup(invoiceEngine, groupAggs)
-        .def("flag", () => 1)
-        .agg("flag_sum", (cols) => (cols.flag as number[]).reduce((a, b) => a + b, 0))
-        .evaluate([inv1, inv2]);
-
-      expect(groupAggs["flag_sum"]).toBe(2);
-    });
-
-    it("repeated evaluate() calls are idempotent without re-running each engine's own evaluate()", () => {
-      const inv = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
-      inv.evaluate();
-
-      const group = new EngineGroup(invoiceEngine).def("flag", (_row, _aggs, meta) => meta.rowIndex);
-      group.evaluate([inv]);
-      group.evaluate([inv]);
-
-      expect(inv.cols["flag"]).toEqual([0, 1]);
-      expect(Object.keys(inv.cols)).toEqual(["cost", "qty", "line_cost", "flag"]);
-    });
-
-    it("throws when a .def() name collides with any engine's headers, before mutating any engine", () => {
-      const templateEngine = new Engine<{ x: number[] }>();
-      const e1 = new Engine<{ x: number[] }>().def("dup", (r) => r.x).bind(["x"], [[1]]);
-      const e2 = new Engine<{ x: number[] }>().bind(["x"], [[2]]);
-      e1.evaluate();
-      e2.evaluate();
-
-      const group = new EngineGroup(templateEngine).def("dup", () => 99);
-      expect(() => {
-        group.evaluate([e1, e2]);
-      }).toThrow('Column "dup" already exists');
-      expect(Object.keys(e2.cols)).not.toContain("dup");
-    });
+    chained.evaluate("manual");
+    // upstream for table 2 = tables 0 and 1
+    expect(capturedUpstream).toBeDefined();
+    expect((capturedUpstream as Record<string, CellValue[]>)["total_cost"]).toEqual([80, 20]);
   });
 });

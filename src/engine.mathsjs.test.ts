@@ -1,7 +1,7 @@
 import { describe, expect, it, jest } from "@jest/globals";
 import { create, all } from "mathjs";
 import type { BigNumber } from "mathjs";
-import { Engine, EngineGroup } from "./engine.js";
+import { Engine } from "./engine.js";
 import type { ExprCompiler } from "./engine.js";
 
 // Configure a mathjs instance that uses BigNumber for all numeric literals.
@@ -143,23 +143,6 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
     expect(rows[2][shareIdx].toNumber()).toBeCloseTo(0.3);
   });
 
-  it(".aggRow() with string expression computes a per-row array over columns", () => {
-    const headers = ["cost"];
-    const rows: BigNumber[][] = [[bn(30)], [bn(40)], [bn(30)]];
-    let i = 0;
-
-    new Engine<{ cost: BigNumber[] }, BigNumber>(mathCompiler)
-      .aggRow("shares", "dotDivide(cost, sum(cost))")
-      .def("share", (_row, aggs) => aggs.shares[i++])
-      .evaluate(headers, rows);
-
-    // totalCost = 100; shares = [0.3, 0.4, 0.3]
-    const shareIdx = headers.indexOf("share");
-    expect(rows[0][shareIdx].toNumber()).toBeCloseTo(0.3);
-    expect(rows[1][shareIdx].toNumber()).toBeCloseTo(0.4);
-    expect(rows[2][shareIdx].toNumber()).toBeCloseTo(0.3);
-  });
-
   it("throws when a string expression is used without a compiler", () => {
     expect(() => {
       new Engine<{ x: BigNumber[] }, BigNumber>().def("doubled", "x * 2");
@@ -227,21 +210,22 @@ describe("Engine — ExprCompiler<V> type enforcement", () => {
   });
 });
 
-describe("EngineGroup — mathjs string expressions", () => {
+describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
   type InvoiceInput = { cost: BigNumber[]; qty: BigNumber[] };
   const invoiceEngine = new Engine<InvoiceInput, BigNumber>(mathCompiler)
     .def("line_cost", "cost * qty")
     .agg("total_cost", "sum(line_cost)");
 
-  it(".def() string expression appends a column to every engine's donor table", () => {
+  it(".def() string expression appends a column to every upstream table", () => {
     const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)], [bn(20), bn(3)]]);
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[bn(5), bn(4)]]);
     inv1.evaluate();
     inv2.evaluate();
 
-    new EngineGroup(invoiceEngine, mathCompiler)
+    new Engine<{ line_cost: BigNumber[] }, BigNumber>(mathCompiler)
       .def("doubled_cost", "line_cost * 2")
-      .evaluate([inv1, inv2]);
+      .bindX([inv1, inv2])
+      .evaluate("manual");
 
     const dc1 = inv1.cols["doubled_cost"] as BigNumber[];
     expect(dc1[0].toNumber()).toBe(40);  // 10*2*2
@@ -250,75 +234,45 @@ describe("EngineGroup — mathjs string expressions", () => {
     expect(dc2[0].toNumber()).toBe(40);  // 5*4*2
   });
 
-  it(".agg() string expression runs over merged columns from all engines", () => {
+  it(".cardinal() string expression computes grand total across all tables", () => {
+    // inv1: line_cost=[20,60], total_cost=80
+    // inv2: line_cost=[20,15], total_cost=35
     const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)], [bn(20), bn(3)]]);
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[bn(5), bn(4)], [bn(15), bn(1)]]);
     inv1.evaluate();
     inv2.evaluate();
 
-    const groupAggs: Record<string, BigNumber | BigNumber[]> = {};
-    new EngineGroup(invoiceEngine, mathCompiler, groupAggs)
-      .agg("grand_total", "sum(line_cost)")
-      .evaluate([inv1, inv2]);
+    const cardinals: Record<string, BigNumber> = {};
+    new Engine<{ cost: BigNumber[] }, BigNumber>(mathCompiler)
+      .cardinal("grand_total", "sum(total_cost)")
+      .bindX([inv1, inv2], cardinals as Record<string, import("./expr.js").CellValue>)
+      .evaluate("manual");
 
-    // line_cost = [20, 60, 20, 15] → sum = 115
-    expect((groupAggs["grand_total"] as BigNumber).toNumber()).toBe(115);
+    expect((cardinals["grand_total"] as BigNumber).toNumber()).toBe(115);
   });
 
-  it(".groupAgg() string expression runs over the donor-aggregate table", () => {
+  it(".agg() string expression runs per table over merged columns", () => {
     const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)], [bn(20), bn(3)]]);
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[bn(5), bn(4)], [bn(15), bn(1)]]);
     inv1.evaluate();
     inv2.evaluate();
 
-    const groupAggs: Record<string, BigNumber | BigNumber[]> = {};
-    new EngineGroup(invoiceEngine, mathCompiler, groupAggs)
-      .groupAgg("grand_total", "sum(total_cost)")
-      .evaluate([inv1, inv2]);
+    new Engine<{ cost: BigNumber[]; qty: BigNumber[] }, BigNumber>(mathCompiler)
+      .agg("total_qty", "sum(qty)")
+      .bindX([inv1, inv2])
+      .evaluate("manual");
 
-    // total_cost = [80, 35] → sum = 115
-    expect((groupAggs["grand_total"] as BigNumber).toNumber()).toBe(115);
-  });
-
-  it(".groupAggRow() string expression produces one value per engine", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)], [bn(20), bn(3)]]);
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[bn(5), bn(4)], [bn(15), bn(1)]]);
-    inv1.evaluate();
-    inv2.evaluate();
-
-    const groupAggs: Record<string, BigNumber | BigNumber[]> = {};
-    new EngineGroup(invoiceEngine, mathCompiler, groupAggs)
-      .groupAgg("grand_total", "sum(total_cost)")
-      .groupAggRow("share", "dotDivide(total_cost, grand_total)")
-      .evaluate([inv1, inv2]);
-
-    const shares = groupAggs["share"] as BigNumber[];
-    expect(shares[0].toNumber()).toBeCloseTo(80 / 115);
-    expect(shares[1].toNumber()).toBeCloseTo(35 / 115);
+    // inv1: qty=[2,3] → total_qty=5; inv2: qty=[4,1] → total_qty=5
+    expect((inv1.aggs["total_qty"] as BigNumber).toNumber()).toBe(5);
+    expect((inv2.aggs["total_qty"] as BigNumber).toNumber()).toBe(5);
   });
 
   it("throws when a string expression is used without a compiler", () => {
+    const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)]]);
     expect(() => {
-      new EngineGroup(invoiceEngine).def("doubled", "line_cost * 2");
+      new Engine<{ line_cost: BigNumber[] }, BigNumber>()
+        .def("doubled", "line_cost * 2")
+        .bindX([inv1]);
     }).toThrow(/requires a compiler/);
-  });
-
-  it("compiler outer function is called once per expression, not once per row or engine", () => {
-    const outerSpy: ExprCompiler<BigNumber> = jest.fn((expression: string) => {
-      const compiled = math.compile(expression);
-      return (scope: Record<string, unknown>) => compiled.evaluate(scope) as BigNumber | BigNumber[];
-    });
-
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)], [bn(20), bn(3)]]);
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[bn(5), bn(4)]]);
-    inv1.evaluate();
-    inv2.evaluate();
-
-    new EngineGroup(invoiceEngine, outerSpy)
-      .def("doubled", "line_cost * 2")
-      .evaluate([inv1, inv2]);
-
-    expect(outerSpy).toHaveBeenCalledTimes(1);
-    expect(outerSpy).toHaveBeenCalledWith("line_cost * 2");
   });
 });

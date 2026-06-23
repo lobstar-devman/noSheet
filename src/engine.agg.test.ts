@@ -70,52 +70,39 @@ describe("Engine.agg — scalar aggregate", () => {
     expect(col(headers, rows, "share")[1]).toBeCloseTo(8 / 24);
     expect(col(headers, rows, "share")[2]).toBeCloseTo(12 / 24);
   });
-});
 
-// ── Per-row aggregates (.aggRow) ──────────────────────────────────────────────
+  it("aggMeta third parameter carries tableIndex=0 and tableCount=1 in single-table mode", () => {
+    const headers = ["x"];
+    const rows: CellValue[][] = [[10], [20]];
+    let capturedIdx = -1;
+    let capturedCount = -1;
 
-describe("Engine.aggRow — per-row aggregate", () => {
-  it("computes a rank and makes it available to subsequent .def()", () => {
-    const headers = ["score"];
-    const rows: CellValue[][] = [[30], [10], [20]];
-    let i = 0;
-
-    new Engine<{ score: number[] }>()
-      .aggRow("rank", (cols) => {
-        const sorted = [...cols.score].sort((a, b) => b - a);
-        return cols.score.map((s) => sorted.indexOf(s) + 1);
+    new Engine<{ x: number[] }>()
+      .agg("total", (cols, _aggs, aggMeta) => {
+        capturedIdx = aggMeta.tableIndex;
+        capturedCount = aggMeta.tableCount;
+        return cols.x.reduce((a, b) => a + b, 0);
       })
-      .def("rankLabel", (_row, aggs) => `#${String(aggs.rank[i++])}`)
       .evaluate(headers, rows);
 
-    expect(col(headers, rows, "rankLabel")).toEqual(["#1", "#3", "#2"]);
+    expect(capturedIdx).toBe(0);
+    expect(capturedCount).toBe(1);
   });
 
-  it("does not add the aggRow name to headers or rows", () => {
+  it("aggMeta.get(0) returns the current aggs snapshot", () => {
     const headers = ["x"];
-    const rows: CellValue[][] = [[1], [2]];
+    const rows: CellValue[][] = [[1], [2], [3]];
+    let seen: Record<string, unknown> | undefined;
 
     new Engine<{ x: number[] }>()
-      .aggRow("doubled", (cols) => cols.x.map((v) => v * 2))
+      .agg("sum", (cols) => cols.x.reduce((a, b) => a + b, 0))
+      .agg("check", (_cols, _aggs, aggMeta) => {
+        seen = aggMeta.get(0) as Record<string, unknown>;
+        return 0;
+      })
       .evaluate(headers, rows);
 
-    expect(headers).not.toContain("doubled");
-    expect(rows[0]).toHaveLength(1);
-  });
-
-  it("per-row aggregate can reference a previously computed scalar aggregate", () => {
-    const headers = ["x"];
-    const rows: CellValue[][] = [[3], [7], [8]];
-    let i = 0;
-
-    new Engine<{ x: number[] }>()
-      .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
-      .aggRow("pct", (cols, aggs) => cols.x.map((v) => Math.round((v / aggs.total) * 100)))
-      .def("pctRounded", (_row, aggs) => aggs.pct[i++])
-      .evaluate(headers, rows);
-
-    // total=18; pct=[17, 39, 44]
-    expect(col(headers, rows, "pctRounded")).toEqual([17, 39, 44]);
+    expect(seen?.["sum"]).toBe(6);
   });
 });
 
@@ -150,7 +137,7 @@ describe("Engine.def with aggs parameter", () => {
 
 // ── Mixed chains ──────────────────────────────────────────────────────────────
 
-describe("Engine — mixed def / agg / aggRow chains", () => {
+describe("Engine — mixed def / agg chains", () => {
   it("interleaves def and agg steps correctly", () => {
     const headers = ["x"];
     const rows: CellValue[][] = [[1], [2], [3], [4]];
