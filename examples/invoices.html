@@ -114,8 +114,8 @@ const currencyFormatter = new Intl.NumberFormat(undefined, {
                 <details name="invoice_accordion" open>
                     <summary>
                         Invoice <span x-text="invoice_index + 1"></span>
-                        &mdash; GM: <span x-text="groupAggs.invoice_gross_margin ? pctFormatter.format(groupAggs.invoice_gross_margin[invoice_index]) : ''"></span>
-                        &mdash; Weight: <span x-text="groupAggs.invoice_weighted_margin ? pctFormatter.format(groupAggs.invoice_weighted_margin[invoice_index]) : ''"></span>
+                        &mdash; GM: <span x-text="invoice.aggs.invoice_gross_margin != null ? pctFormatter.format(invoice.aggs.invoice_gross_margin) : ''"></span>
+                        &mdash; Weight: <span x-text="invoice.aggs.invoice_weighted_margin != null ? pctFormatter.format(invoice.aggs.invoice_weighted_margin) : ''"></span>
                     </summary>
                     <table>
                         <thead>
@@ -202,7 +202,7 @@ const currencyFormatter = new Intl.NumberFormat(undefined, {
 <script src="/js/prism.js" data-manual></script>
 
 <script type="module">
-import {invoiceEngine, makeInvoiceGroup} from "/js/invoice-engine.js"
+import {invoiceEngine, invoiceGroupEngine} from "/js/invoice-engine.js"
 
 function getRandomInt(min, max) {
     min = Math.ceil(min);
@@ -211,7 +211,7 @@ function getRandomInt(min, max) {
 }
 
 const boundEngines = [];
-let invoiceGroup;
+let invoiceChain;
 
 document.addEventListener('alpine:init', () => {
 
@@ -220,7 +220,6 @@ document.addEventListener('alpine:init', () => {
         samples: [],
         groupAggs: {},
         init() {
-            invoiceGroup = makeInvoiceGroup(this.groupAggs);
             const rawSamples = Array.from({ length: invoices }, _ =>
                 Array.from({ length: getRandomInt(5, maxRows) }, (v, k) => {
                     const cost = getRandomInt(1, 200) + (getRandomInt(1, 99) / 100),
@@ -245,10 +244,14 @@ document.addEventListener('alpine:init', () => {
                 boundEngines[idx].evaluate();
             });
 
+            // Bind the cross-invoice engine onto all bound invoice engines.
+            // Cardinals (grand_*) land in groupAggs; per-table aggs land in each sample.aggs.
+            invoiceChain = invoiceGroupEngine.bindX(boundEngines, this.groupAggs);
             this._evalGroup();
         },
         _evalGroup() {
-            invoiceGroup.evaluate(boundEngines);
+            // Upstreams already evaluated — run only the cross-invoice steps.
+            invoiceChain.evaluate("manual");
         },
         updateLineItem(invoiceIdx, itemIdx, fieldIdx, value) {
             this.samples[invoiceIdx].rows[itemIdx][fieldIdx] = parseFloat(value) || 0;
