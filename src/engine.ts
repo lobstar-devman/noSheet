@@ -139,12 +139,13 @@ function buildCollectedAggs(upstreams: BoundEngine[]): Record<string, CellValue[
  *   across all tables (available after `.bindX()`).
  *
  * @typeParam Input     - The input table type (column arrays keyed by name).
- * @typeParam InputAggs - Upstream aggregate contract: aggregates produced by the engine this
- *   one chains onto. Declared values become available in `.def()` and `.agg()` callbacks as
- *   typed keys on the `aggs` parameter without any cast.
+ * @typeParam InputAggs - Upstream aggregate contract: per-table scalars produced by the engine
+ *   this one chains onto. Declared values appear as typed keys on the `aggs` parameter in
+ *   `.def()`, `.agg()`, and `.cardinal()` callbacks without any cast.
  * @typeParam Val       - The cell value type (default `CellValue`; use e.g. `BigNumber` for mathjs).
  * @typeParam Cols      - Accumulated row type (grows with each `.def()` call).
- * @typeParam Aggs      - Accumulated aggregate type (grows with each `.agg()` / `.cardinal()` step).
+ * @typeParam Aggs      - Per-table aggregate type (grows with each `.agg()` call).
+ * @typeParam Cards     - Cross-table cardinal type (grows with each `.cardinal()` call).
  *
  * @beta
  */
@@ -155,6 +156,7 @@ export class Engine<
   Val extends CellValue = CellValue,
   Cols extends { [K in keyof Input]: Input[K][number] } = TableToRow<Input>,
   Aggs extends Record<string, Val | Val[]> = Record<never, never>,
+  Cards extends Record<string, Val> = Record<never, never>,
 > {
   readonly #steps: Step[];
   readonly #compiler: ExprCompiler<Val> | undefined;
@@ -175,14 +177,14 @@ export class Engine<
     name: Name,
     fn: (
       row: Cols & { [K in keyof Input]: Input[K][number] },
-      aggs: InputAggs & Aggs,
+      aggs: InputAggs & Aggs & Cards,
       meta: RowMeta,
     ) => V,
-  ): Engine<Input, InputAggs, Val, Cols & Record<Name, V>, Aggs>
+  ): Engine<Input, InputAggs, Val, Cols & Record<Name, V>, Aggs, Cards>
   def<Name extends string>(
     name: Name,
     expression: [Input] extends [Record<string, Val[]>] ? string : never,
-  ): Engine<Input, InputAggs, Val, Cols & Record<Name, Val>, Aggs>
+  ): Engine<Input, InputAggs, Val, Cols & Record<Name, Val>, Aggs, Cards>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   def(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -195,14 +197,14 @@ export class Engine<
     name: Name,
     fn: (
       cols: Input & { [K in keyof Cols]: Cols[K][] },
-      aggs: InputAggs & Aggs,
+      aggs: InputAggs & Aggs & Cards,
       aggMeta: AggMeta,
     ) => V,
-  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, V>>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, V>, Cards>
   agg<Name extends string>(
     name: Name,
     expression: [Input] extends [Record<string, Val[]>] ? string : never,
-  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, Val>>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, Val>, Cards>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agg(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -215,19 +217,26 @@ export class Engine<
    * Adds a cardinal (cross-table) aggregate. Evaluated once across all tables when
    * running via {@link ChainedBoundEngine}. In single-table mode its result is stored
    * in `aggs` as a scalar.
+   *
+   * - `cols` mirrors `.agg()`: typed column arrays from all upstream tables merged together.
+   * - `aggs` is the *collected* form of per-table scalars — each key maps to an array of
+   *   values (one per table), preserving the specific element type from `InputAggs` / `Aggs`.
+   * - `cards` holds only the cardinals computed so far in this engine (typed via `Cards`).
+   *
+   * Subsequent `.def()` and `.agg()` steps see the cardinal result as a scalar via `Cards`.
    */
   cardinal<Name extends string, V extends Val>(
     name: Name,
     fn: (
-      cols: Record<string, CellValue[]>,
-      aggs: Record<string, CellValue[]>,
-      cards: Record<string, CellValue>,
+      cols: (Input & { [K in keyof Cols]: Cols[K][] }) & Record<string, CellValue[]>,
+      aggs: { [K in keyof (InputAggs & Aggs)]: Array<(InputAggs & Aggs)[K]> } & Record<string, CellValue[]>,
+      cards: Cards & Record<string, CellValue>,
     ) => V,
-  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, V>>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs, Cards & Record<Name, V>>
   cardinal<Name extends string>(
     name: Name,
     expression: [Input] extends [Record<string, Val[]>] ? string : never,
-  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, Val>>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs, Cards & Record<Name, Val>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cardinal(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

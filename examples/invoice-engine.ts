@@ -51,13 +51,12 @@ export const invoiceGroupEngine = new Engine<InvoiceRow, InvoiceAggs>()
     .agg("invoice_gross_margin",
         (_cols, aggs) => 1 - aggs.total_cost / aggs.total_offer)
     .cardinal("grand_qty",
-        cols => (cols["qty"] as number[]).reduce(numAdd, 0))
+        cols => cols.qty.reduce(numAdd, 0))
     .cardinal("grand_cost",
-        (_cols, aggs) => (aggs["total_cost"] as number[]).reduce(numAdd, 0))
+        (_cols, aggs) => aggs.total_cost.reduce(numAdd, 0))
     .cardinal("grand_offer",
-        (_cols, aggs) => (aggs["total_offer"] as number[]).reduce(numAdd, 0))
+        (_cols, aggs) => aggs.total_offer.reduce(numAdd, 0))
     .cardinal("grand_margin",
-        (_cols, _aggs, cards) =>
-            1 - (cards["grand_cost"] as number) / (cards["grand_offer"] as number))
+        (_cols, _aggs, cards) => 1 - cards.grand_cost / cards.grand_offer)
     .agg("invoice_weighted_margin",
         (_cols, aggs) => aggs.total_cost / aggs.grand_cost);
