@@ -138,15 +138,20 @@ function buildCollectedAggs(upstreams: BoundEngine[]): Record<string, CellValue[
  * - `.cardinal(name, (cols, aggs, cards) => scalar)` — cross-table aggregate. Evaluated once
  *   across all tables (available after `.bindX()`).
  *
- * @typeParam Input - The input table type.
- * @typeParam Val   - The value type for all cells.
- * @typeParam Cols  - Accumulated row type (grows with each `.def()` call).
- * @typeParam Aggs  - Accumulated aggregate type (grows with each step).
+ * @typeParam Input     - The input table type (column arrays keyed by name).
+ * @typeParam InputAggs - Upstream aggregate contract: aggregates produced by the engine this
+ *   one chains onto. Declared values become available in `.def()` and `.agg()` callbacks as
+ *   typed keys on the `aggs` parameter without any cast.
+ * @typeParam Val       - The cell value type (default `CellValue`; use e.g. `BigNumber` for mathjs).
+ * @typeParam Cols      - Accumulated row type (grows with each `.def()` call).
+ * @typeParam Aggs      - Accumulated aggregate type (grows with each `.agg()` / `.cardinal()` step).
  *
  * @beta
  */
 export class Engine<
   Input extends Record<string, CellValue[]>,
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  InputAggs extends Record<string, CellValue | CellValue[]> = Record<never, never>,
   Val extends CellValue = CellValue,
   Cols extends { [K in keyof Input]: Input[K][number] } = TableToRow<Input>,
   Aggs extends Record<string, Val | Val[]> = Record<never, never>,
@@ -170,14 +175,14 @@ export class Engine<
     name: Name,
     fn: (
       row: Cols & { [K in keyof Input]: Input[K][number] },
-      aggs: Aggs,
+      aggs: InputAggs & Aggs,
       meta: RowMeta,
     ) => V,
-  ): Engine<Input, Val, Cols & Record<Name, V>, Aggs>
+  ): Engine<Input, InputAggs, Val, Cols & Record<Name, V>, Aggs>
   def<Name extends string>(
     name: Name,
     expression: [Input] extends [Record<string, Val[]>] ? string : never,
-  ): Engine<Input, Val, Cols & Record<Name, Val>, Aggs>
+  ): Engine<Input, InputAggs, Val, Cols & Record<Name, Val>, Aggs>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   def(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -189,15 +194,15 @@ export class Engine<
   agg<Name extends string, V extends Val>(
     name: Name,
     fn: (
-      cols: Input & { [K in keyof Cols]: Val[] },
-      aggs: Aggs,
+      cols: Input & { [K in keyof Cols]: Cols[K][] },
+      aggs: InputAggs & Aggs,
       aggMeta: AggMeta,
     ) => V,
-  ): Engine<Input, Val, Cols, Aggs & Record<Name, V>>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, V>>
   agg<Name extends string>(
     name: Name,
     expression: [Input] extends [Record<string, Val[]>] ? string : never,
-  ): Engine<Input, Val, Cols, Aggs & Record<Name, Val>>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, Val>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agg(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -211,14 +216,18 @@ export class Engine<
    * running via {@link ChainedBoundEngine}. In single-table mode its result is stored
    * in `aggs` as a scalar.
    */
-  cardinal<Name extends string>(
+  cardinal<Name extends string, V extends Val>(
     name: Name,
-    fn: CardinalFn,
-  ): Engine<Input, Val, Cols, Aggs & Record<Name, Val>>
+    fn: (
+      cols: Record<string, CellValue[]>,
+      aggs: Record<string, CellValue[]>,
+      cards: Record<string, CellValue>,
+    ) => V,
+  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, V>>
   cardinal<Name extends string>(
     name: Name,
     expression: [Input] extends [Record<string, Val[]>] ? string : never,
-  ): Engine<Input, Val, Cols, Aggs & Record<Name, Val>>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, Val>>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cardinal(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

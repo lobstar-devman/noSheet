@@ -1,4 +1,4 @@
-import { sum, compile } from 'https://cdn.jsdelivr.net/npm/mathjs@14.8.1/+esm';
+import { sum } from 'https://cdn.jsdelivr.net/npm/mathjs@14.8.1/+esm';
 
 // ── Module-level helpers ────────────────────────────────────────────────────────
 function wrapAggsAsArrays(aggs) {
@@ -732,17 +732,13 @@ class ChainedBoundEngine {
     }
 }
 
-const mathCompiler = (expression) => {
-    const compiled = compile(expression);
-    return (scope) => compiled.evaluate(scope);
-};
 // Per-invoice computation engine.  Bind each invoice with .bind(), then evaluate.
-const invoiceEngine = new Engine(mathCompiler)
-    .def("line_cost", row => row.cost * row.qty) // JS expression
-    .agg("total_cost", "sum(line_cost)") // mathjs string expression
-    .agg("total_offer", "sum(offer)")
+const invoiceEngine = new Engine()
+    .def("line_cost", row => row.cost * row.qty)
+    .agg("total_cost", cols => sum(cols.line_cost))
+    .agg("total_offer", cols => sum(cols.offer))
     .def("gross_margin", row => 1 - (row.line_cost / row.offer))
-    .def("weighted_margin", "line_cost/total_cost")
+    .def("weighted_margin", (row, aggs) => row.line_cost / aggs.total_cost)
     .agg("total_mw", cols => sum(cols.weighted_margin))
     .def("margin_score", row => row.gross_margin < 0.3 ? '👎' : '👍');
 // Cross-invoice analytics engine.  Use invoiceGroupEngine.bindX(boundEngines, cardinalsTarget)
@@ -759,17 +755,15 @@ const invoiceEngine = new Engine(mathCompiler)
 const invoiceGroupEngine = new Engine()
     .agg("invoice_gross_margin", (_cols, aggs) => {
     // aggs carries scalar values from invoiceEngine: total_cost, total_offer, etc.
-    const a = aggs;
-    return 1 - a.total_cost / a.total_offer;
+    return 1 - aggs.total_cost / aggs.total_offer;
 })
     .cardinal("grand_qty", cols => sum(cols["qty"]))
     .cardinal("grand_cost", (_cols, aggs) => sum(aggs["total_cost"]))
     .cardinal("grand_offer", (_cols, aggs) => sum(aggs["total_offer"]))
-    .cardinal("grand_margin", (_cols, _aggs, cards) => 1 - cards["grand_cost"] / cards["grand_offer"])
+    .cardinal("grand_margin", (_cols, _aggs, cards) => 1 - (cards["grand_cost"]) / (cards["grand_offer"]))
     .agg("invoice_weighted_margin", (_cols, aggs) => {
     // grand_cost was written to this table's aggs by the cardinal step above.
-    const a = aggs;
-    return a.total_cost / a.grand_cost;
+    return aggs.total_cost / aggs.grand_cost;
 });
 
 export { invoiceEngine, invoiceGroupEngine };

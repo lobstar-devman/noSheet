@@ -24,7 +24,7 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
       [bn(20), bn(2)],
     ];
 
-    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, BigNumber>()
+    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>()
       .def("cost", (row) => compiled.evaluate(row) as BigNumber)
       .evaluate(headers, rows);
 
@@ -41,7 +41,7 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
       [bn(200), bn(15), bn(4)],
     ];
 
-    new Engine<{ base: BigNumber[]; rate: BigNumber[]; hours: BigNumber[] }, BigNumber>()
+    new Engine<{ base: BigNumber[]; rate: BigNumber[]; hours: BigNumber[] }, Record<never, never>, BigNumber>()
       .def("pay", (row) => compiled.evaluate(row) as BigNumber)
       .evaluate(headers, rows);
 
@@ -56,7 +56,7 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
     const headers = ["x"];
     const rows: BigNumber[][] = [[bn(5)], [bn(10)]];
 
-    new Engine<{ x: BigNumber[] }, BigNumber>()
+    new Engine<{ x: BigNumber[] }, Record<never, never>, BigNumber>()
       .def("doubled", (row) => doubleCompiled.evaluate(row) as BigNumber)
       .def("tripled", (row) => tripleCompiled.evaluate(row) as BigNumber)
       .evaluate(headers, rows);
@@ -78,7 +78,7 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
       [bn(5), bn(6)],
     ];
 
-    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, BigNumber>()
+    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>()
       .def("cost", (row) => costCompiled.evaluate(row) as BigNumber)
       .agg("totalCost", (cols) =>
         (cols.cost).reduce((acc, v) => acc.add(v), bn(0)),
@@ -111,7 +111,7 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
       [bn(20), bn(2)],
     ];
 
-    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, BigNumber>(compiler)
+    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>(compiler)
       .def("cost", "price * qty")
       .evaluate(headers, rows);
 
@@ -130,7 +130,7 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
       [bn(5), bn(6)],
     ];
 
-    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, BigNumber>(mathCompiler)
+    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>(mathCompiler)
       .def("cost", "price * qty")
       .agg("totalCost", "sum(cost)")
       .def("share", "cost / totalCost")
@@ -145,7 +145,7 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
 
   it("throws when a string expression is used without a compiler", () => {
     expect(() => {
-      new Engine<{ x: BigNumber[] }, BigNumber>().def("doubled", "x * 2");
+      new Engine<{ x: BigNumber[] }, Record<never, never>, BigNumber>().def("doubled", "x * 2");
     }).toThrow(/requires a compiler/);
   });
 
@@ -158,7 +158,7 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
     const headers = ["x"];
     const rows: BigNumber[][] = [[bn(1)], [bn(2)], [bn(3)], [bn(4)], [bn(5)]];
 
-    new Engine<{ x: BigNumber[] }, BigNumber>(outerSpy)
+    new Engine<{ x: BigNumber[] }, Record<never, never>, BigNumber>(outerSpy)
       .def("doubled", "x * 2")
       .evaluate(headers, rows);
 
@@ -178,7 +178,7 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
 describe("Engine — ExprCompiler<V> type enforcement", () => {
   it("ExprCompiler<BigNumber> cannot be passed to an Engine typed for number", () => {
     // @ts-expect-error ExprCompiler<BigNumber> is not assignable to ExprCompiler<number>
-    const engine = new Engine<{ x: number[] }, number>(mathCompiler);
+    const engine = new Engine<{ x: number[] }, Record<never, never>, number>(mathCompiler);
     expect(engine).toBeDefined(); // type error is compile-time only; runtime still runs
   });
 
@@ -186,7 +186,7 @@ describe("Engine — ExprCompiler<V> type enforcement", () => {
     const headers = ["x"];
     const rows: BigNumber[][] = [[bn(2)], [bn(4)]];
 
-    new Engine<{ x: BigNumber[] }, BigNumber>(mathCompiler)
+    new Engine<{ x: BigNumber[] }, Record<never, never>, BigNumber>(mathCompiler)
       .def("doubled", "x * 2")
       // row.doubled is BigNumber — .add() is valid
       .def("plusOne", (row) => row.doubled.add(bn(1)))
@@ -197,14 +197,14 @@ describe("Engine — ExprCompiler<V> type enforcement", () => {
   });
 
   it("TypeScript rejects treating a string-def column as a plain number", () => {
-    new Engine<{ x: BigNumber[] }, BigNumber>(mathCompiler)
+    new Engine<{ x: BigNumber[] }, Record<never, never>, BigNumber>(mathCompiler)
       .def("doubled", "x * 2")
       // @ts-expect-error row.doubled is BigNumber — the * operator is not defined on it
       .def("bad", (row) => row.doubled * 2);
   });
 
   it("TypeScript rejects string expressions when Input columns are not Val-typed", () => {
-    new Engine<{ a: string[] }, BigNumber>(mathCompiler)
+    new Engine<{ a: string[] }, Record<never, never>, BigNumber>(mathCompiler)
       // @ts-expect-error "a" is string[], but Val is BigNumber — string expressions require Input extends Record<string, Val[]>
       .def("doubled", "a * 2");
   });
@@ -212,7 +212,7 @@ describe("Engine — ExprCompiler<V> type enforcement", () => {
 
 describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
   type InvoiceInput = { cost: BigNumber[]; qty: BigNumber[] };
-  const invoiceEngine = new Engine<InvoiceInput, BigNumber>(mathCompiler)
+  const invoiceEngine = new Engine<InvoiceInput, Record<never, never>, BigNumber>(mathCompiler)
     .def("line_cost", "cost * qty")
     .agg("total_cost", "sum(line_cost)");
 
@@ -222,7 +222,7 @@ describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
     inv1.evaluate();
     inv2.evaluate();
 
-    new Engine<{ line_cost: BigNumber[] }, BigNumber>(mathCompiler)
+    new Engine<{ line_cost: BigNumber[] }, Record<never, never>, BigNumber>(mathCompiler)
       .def("doubled_cost", "line_cost * 2")
       .bindX([inv1, inv2])
       .evaluate("manual");
@@ -243,7 +243,7 @@ describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
     inv2.evaluate();
 
     const cardinals: Record<string, BigNumber> = {};
-    new Engine<{ cost: BigNumber[] }, BigNumber>(mathCompiler)
+    new Engine<{ cost: BigNumber[] }, Record<never, never>, BigNumber>(mathCompiler)
       .cardinal("grand_total", "sum(total_cost)")
       .bindX([inv1, inv2], cardinals as Record<string, import("./expr.js").CellValue>)
       .evaluate("manual");
@@ -257,7 +257,7 @@ describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
     inv1.evaluate();
     inv2.evaluate();
 
-    new Engine<{ cost: BigNumber[]; qty: BigNumber[] }, BigNumber>(mathCompiler)
+    new Engine<{ cost: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>(mathCompiler)
       .agg("total_qty", "sum(qty)")
       .bindX([inv1, inv2])
       .evaluate("manual");
@@ -270,7 +270,7 @@ describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
   it("throws when a string expression is used without a compiler", () => {
     const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)]]);
     expect(() => {
-      new Engine<{ line_cost: BigNumber[] }, BigNumber>()
+      new Engine<{ line_cost: BigNumber[] }, Record<never, never>, BigNumber>()
         .def("doubled", "line_cost * 2")
         .bindX([inv1]);
     }).toThrow(/requires a compiler/);

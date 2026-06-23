@@ -17,7 +17,7 @@ describe("Engine — external library type (Decimal)", () => {
     const headers = ["price", "qty"];
     const rows: Decimal[][] = [[d(10), d(3)], [d(20), d(2)]];
 
-    new Engine<{ price: Decimal[]; qty: Decimal[] }, Decimal>()
+    new Engine<{ price: Decimal[]; qty: Decimal[] }, Record<never, never>, Decimal>()
       .def("total", (row) => row.price.mul(row.qty))
       .evaluate(headers, rows);
 
@@ -30,7 +30,7 @@ describe("Engine — external library type (Decimal)", () => {
     const headers = ["amount"];
     const rows: Decimal[][] = [[d(10)], [d(20)], [d(30)]];
 
-    new Engine<{ amount: Decimal[] }, Decimal>()
+    new Engine<{ amount: Decimal[] }, Record<never, never>, Decimal>()
       .agg("sum", (cols) => cols.amount.reduce((acc, v) => acc.add(v), d(0)))
       .def("share", (row, aggs) => row.amount.mul(d(1 / aggs.sum.value)))
       .evaluate(headers, rows);
