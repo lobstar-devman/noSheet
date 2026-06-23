@@ -59,7 +59,7 @@ const e1 = new Engine<InvoiceInput>()
 
 type ExpectedCols = {
     line_cost: number[];
-    row_offer: number[];
+    offer: number[];
 };
 
 type ExpectedAggs = {
@@ -201,7 +201,7 @@ export const engine = new Engine<{...}>()
 
 var cardinals = {}
 var bound_engine = engine.bindX(
-                        [donor_table1, donor_table2, donor_table2],
+                        [donor_table1, donor_table2, donor_table3],
                         [donor_aggregates1, donor_aggregates2, donor_aggregates3],
                         cardinals
                     );      
@@ -214,11 +214,13 @@ The parameters passed to a Cardinal step would be:
 `aggs` : All the aggregate objects packaged such that `aggs.total_offer` returns an array of all the agg.total_offer properties passed to the `bind` function
 `cards`: Previously defined cardinals
 
-## `bind` parameter count and return values.
+## `bind` and `bindX`
 
-If bind is passed three parameters; `(array, array, object)` then it is assumed it is in nested table mode and returns the populated cardinal object.
+`bind(headers, rows, aggs?)` is unchanged — the entry point for the initial binding of raw table data, returning a `BoundEngine`.
 
-If bind is passed two parameters; `(array, object)` then it works as it's current implementation.
+`bindX(BoundEngine | BoundEngine[], cardinals?)` chains a new engine onto one or more upstream `BoundEngine`s. It derives headers, rows, and donor aggregates directly from the upstream `BoundEngine`s — no headers array is required. It returns an object with full `BoundEngine` semantics (`.evaluate()`, `.aggs`, `.cols`, `.rowCount`).
+
+When passed an array of `BoundEngine`s and a cardinals object, `bindX` operates in multi-table mode. When passed a single `BoundEngine`, it operates in single-table chaining mode — useful when composing engine definitions from separate third-party libraries.
 
 ## Nested Donor table intrinsics and getters
 
@@ -259,11 +261,11 @@ var invoiceEngine = new Engine<InvoiceInput>()
 var engine = new Engine<{...}>()
     .agg("total_qty", cols => sum(cols.qty) ) //adds a new total_qty to each donor aggregate object
     .cardinal("grand_qty",     (cols, aggs, cards) => sum(aggs.total_qty))
-    .cardinal("grand_cost",    (cols, aggs, cards) => sum(cols.total_cost))
-    .cardinal("grand_offer",   (cols, aggs, cards) => sum(cols.total_offer));
-    .cardinal("grand_margin",  (cols, aggs, cards) => 1 - (cards.grand_cost / cards.grand_offer));
-    .agg("invoice_gross_margin",     (cols) => 1 - ( agg.total_cost / agg.total_offer) ) 
-    .agg("invoice_weighted_margin",  (cols, aggs, cards) => row.total_cost / cards.grand_cost ) 
+    .cardinal("grand_cost",    (cols, aggs, cards) => sum(aggs.total_cost))
+    .cardinal("grand_offer",   (cols, aggs, cards) => sum(aggs.total_offer))
+    .cardinal("grand_margin",  (cols, aggs, cards) => 1 - (cards.grand_cost / cards.grand_offer))
+    .agg("invoice_gross_margin",     (cols, aggs) => 1 - (aggs.total_cost / aggs.total_offer))
+    .agg("invoice_weighted_margin",  (cols, aggs, cards) => aggs.total_cost / cards.grand_cost)
 
 var donor_table1 = [...],
     donor_aggregates1 = {},
