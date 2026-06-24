@@ -17,9 +17,6 @@ export type CellValue = number | string | bigint | boolean | object;
  * - `get(filter)` — scans all rows and returns the first one for which `filter` returns `true`,
  *   or `undefined` if none match. The same partial-column rule applies per row.
  *
- * The returned snapshot is a plain object containing only columns available at the point
- * where `.get` is called in the pipeline — it does not itself have a `.get` method.
- *
  * @beta
  */
 export type RowGet = {
@@ -28,31 +25,54 @@ export type RowGet = {
 };
 
 /**
- * A snapshot of all columns available when an expression is evaluated.
+ * A snapshot of all columns available when a `.def()` expression is evaluated.
  * Keys are column names; values are the cell value for the current row.
- *
- * `Row` is continuously updated as definitions are applied: it starts with the input
- * table's columns and gains a new entry for each definition that has been evaluated
- * before the current one. Later expression functions therefore have access to all
- * columns produced by earlier definitions.
- *
- * The `.get` method provides access to sibling rows — see {@link RowGet}.
+ * Pure data — no methods. Use `meta.get()` and `meta.upstream()` for row navigation.
  *
  * @beta
  */
-export type Row = Record<string, CellValue> & { get: RowGet };
+export type Row = Record<string, CellValue>;
 
 /**
- * Intrinsic, per-step values about the current row and column that aren't derivable
- * from `row` or `aggs` alone. Passed as the third argument to an {@link ExprFn} so they
- * can never collide with — or be masked by — a data column of the same name.
+ * Column arrays from all upstream (prior) rows, keyed by column name.
+ * Returned by `meta.upstream()`.
  *
- * - `rowIndex` / `rowCount` — the current row's 0-based position, and the total number
- *   of rows in the table. `rowIndex` advances as each row in the current step is evaluated.
- * - `defOffset` — 0-based position of the current `.def()` step among `.def()` steps only
- *   (`.agg()` / `.aggRow()` steps don't advance it).
- * - `colIndex` — 0-based position the current step's column will occupy in the full header
- *   row, counting input columns and all earlier `.def()` columns.
+ * @beta
+ */
+export type UpstreamRows = Record<string, CellValue[]>;
+
+/**
+ * Donor aggregate arrays from upstream tables, keyed by aggregate name.
+ * Returned by `aggMeta.upstream()`.
+ *
+ * @beta
+ */
+export type UpstreamAggs = Record<string, CellValue[]>;
+
+/**
+ * Provides offset and filter-based access to donor aggregate objects across tables.
+ * Passed as `aggMeta.get` inside an `.agg()` expression.
+ *
+ * @beta
+ */
+export type AggMetaGet = (
+  indexOrFilter:
+    | number
+    | ((aggs: Record<string, CellValue | CellValue[]>) => boolean),
+) => Record<string, CellValue | CellValue[]> | undefined;
+
+/**
+ * Intrinsic, per-step values about the current row and column. Passed as the third
+ * argument to a `.def()` expression so they can never collide with — or be masked by —
+ * a data column of the same name.
+ *
+ * - `rowIndex` / `rowCount` — the current row's 0-based position and total row count.
+ * - `defOffset` — 0-based position of the current `.def()` step among `.def()` steps only.
+ * - `colIndex` — 0-based position the current step's column will occupy in the header row.
+ * - `tableIndex` / `tableCount` — 0-based table position when running in multi-table mode
+ *   (always 0 / 1 for single-table engines).
+ * - `get(offset|filter)` — relative or filter-based access to sibling rows.
+ * - `upstream(filter?)` — column arrays from all prior rows (optionally filtered).
  *
  * @beta
  */
@@ -61,20 +81,34 @@ export type RowMeta = {
   rowCount: number;
   defOffset: number;
   colIndex: number;
+  tableIndex: number;
+  tableCount: number;
+  get: RowGet;
+  upstream: (filter?: (row: Record<string, CellValue>) => boolean) => UpstreamRows;
 };
 
 /**
- * An expression function. Receives a row snapshot, the current aggregate results, and
- * intrinsic row/column metadata, and returns a CellValue.
+ * Intrinsic metadata for an `.agg()` expression — analogous to {@link RowMeta} but
+ * for donor aggregate objects rather than rows.
  *
- * @example
- * ```javascript
- * (row, aggs) => row.cost * row.quantity              // number, no aggs used
- * (row, aggs) => row.x / aggs.total                   // references a scalar aggregate
- * (row, aggs) => row.get(-1)?.x ?? 0                  // previous row's x value
- * (row, aggs) => row.get(r => r.id === row.id)        // filter-based sibling lookup
- * (row, aggs, meta) => `item ${meta.rowIndex} of ${meta.rowCount}`
- * ```
+ * - `tableIndex` / `tableCount` — position of the current table in the multi-table set.
+ * - `get(offset|filter)` — navigates donor aggregate objects by table processing order.
+ * - `upstream(filter?)` — yields prior tables' donor aggregate objects as key-keyed arrays.
+ *
+ * @beta
+ */
+export type AggMeta = {
+  tableIndex: number;
+  tableCount: number;
+  get: AggMetaGet;
+  upstream: (
+    filter?: (aggs: Record<string, CellValue | CellValue[]>) => boolean,
+  ) => UpstreamAggs;
+};
+
+/**
+ * An expression function. Receives a pure row snapshot, the current aggregate results, and
+ * intrinsic row/column metadata, and returns a CellValue.
  *
  * @beta
  */
@@ -85,34 +119,29 @@ export type ExprFn = (
 ) => CellValue;
 
 /**
- * A scalar aggregate function. Receives all input columns as arrays and previously
- * computed aggregates, and returns a single CellValue.
- *
- * @example
- * ```javascript
- * (cols, aggs) => cols.x.reduce((a, b) => (a as number) + (b as number), 0)
- * (cols, aggs) => (aggs.total as number) / cols.x.length
- * ```
+ * A scalar aggregate function. Receives all input columns as arrays, previously computed
+ * aggregates, and aggregate-level intrinsic metadata, and returns a single CellValue.
  *
  * @beta
  */
 export type AggFn = (
   cols: Record<string, CellValue[]>,
   aggs: Record<string, CellValue | CellValue[]>,
+  aggMeta: AggMeta,
 ) => CellValue;
 
 /**
- * A per-row aggregate function. Receives all input columns as arrays and previously
- * computed aggregates, and returns a CellValue array with one value per row.
+ * A cardinal (cross-table) function. Runs once across all tables after all per-table
+ * steps for the current position have completed. Returns a single scalar CellValue.
  *
- * @example
- * ```javascript
- * (cols, aggs) => cols.x.map((v, i) => (v as number) / (aggs.total as number))
- * ```
+ * - `cols` — raw column arrays concatenated across all tables.
+ * - `aggs` — per-key arrays of donor aggregate values (one per table).
+ * - `cards` — cardinals accumulated so far in declaration order.
  *
  * @beta
  */
-export type AggRowFn = (
+export type CardinalFn = (
   cols: Record<string, CellValue[]>,
-  aggs: Record<string, CellValue | CellValue[]>,
-) => CellValue[];
+  aggs: Record<string, CellValue[]>,
+  cards: Record<string, CellValue>,
+) => CellValue;

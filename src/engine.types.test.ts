@@ -45,6 +45,30 @@ void (() => {
 // The return type is void — confirmed by the fact that the result cannot be
 // used as a value. No runtime assertion needed; the type system enforces this.
 
+// ── row is pure data — row.get must not exist ────────────────────────────────
+
+void new Engine<{ x: number[] }>().def(
+  "r",
+  (row) =>
+    // @ts-expect-error: Property 'get' does not exist on Row — moved to meta (hard breaking change)
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+    row.get(-1),
+);
+
+// ── meta.get IS available and correctly typed ─────────────────────────────────
+
+void new Engine<{ x: number[] }>().def(
+  "r",
+  (_row, _aggs, meta) => (meta.get(-1)?.["x"] ?? 0) as number,
+);
+
+// ── meta.upstream IS available and returns UpstreamRows ──────────────────────
+
+void new Engine<{ x: number[] }>().def(
+  "r",
+  (_row, _aggs, meta) => (meta.upstream()["x"]?.length ?? 0) as number,
+);
+
 // Jest requires at least one test block per file.
 it("compile-time type constraints are enforced (see @ts-expect-error directives above)", () => {
   expect(true).toBe(true);

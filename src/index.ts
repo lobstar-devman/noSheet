@@ -1,16 +1,26 @@
-export { Engine, BoundEngine, EngineGroup } from "./engine.js";
+export { Engine, BoundEngine, ChainedBoundEngine } from "./engine.js";
 export type {
   TableToRow,
-  CollectedAggs,
-  AbsoluteRowGet,
-  EngineAccessor,
-  GroupRow,
-  GroupRowMeta,
-  GroupDefFn,
+  ExprCompiler,
+  DefStep,
+  AggStep,
+  CardinalStep,
+  Step,
 } from "./engine.js";
 
-// Row, ExprFn, AggFn, AggRowFn remain public for consumers who use applyDefinitions directly.
-export type { Row, RowMeta, ExprFn, AggFn, AggRowFn } from "./expr.js";
+export type {
+  CellValue,
+  Row,
+  RowGet,
+  RowMeta,
+  UpstreamRows,
+  UpstreamAggs,
+  AggMetaGet,
+  AggMeta,
+  ExprFn,
+  AggFn,
+  CardinalFn,
+} from "./expr.js";
 export type { Definition } from "./definition.js";
 export { def } from "./definition.js";
 export type { Table } from "./table.js";

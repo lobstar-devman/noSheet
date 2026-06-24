@@ -1,5 +1,61 @@
-import { sum, compile } from 'https://cdn.jsdelivr.net/npm/mathjs@14.8.1/+esm';
+import { sum } from 'https://cdn.jsdelivr.net/npm/mathjs@14.8.1/+esm';
 
+// ── Module-level helpers ────────────────────────────────────────────────────────
+function wrapAggsAsArrays(aggs) {
+    const result = {};
+    for (const [k, v] of Object.entries(aggs)) {
+        result[k] = Array.isArray(v) ? v : [v];
+    }
+    return result;
+}
+function makeAggMeta(tableIndex, tableCount, aggsArray) {
+    const get = (indexOrFilter) => {
+        if (typeof indexOrFilter === "function") {
+            for (const a of aggsArray) {
+                if (indexOrFilter(a))
+                    return a;
+            }
+            return undefined;
+        }
+        const target = tableIndex + indexOrFilter;
+        if (target < 0 || target >= tableCount)
+            return undefined;
+        return aggsArray[target];
+    };
+    const upstream = (filter) => {
+        const result = {};
+        for (let i = 0; i < tableIndex; i++) {
+            const a = aggsArray[i];
+            if (!filter || filter(a)) {
+                for (const [k, v] of Object.entries(a)) {
+                    const vals = Array.isArray(v) ? v : [v];
+                    result[k] = k in result ? result[k].concat(vals) : vals.slice();
+                }
+            }
+        }
+        return result;
+    };
+    return { tableIndex, tableCount, get, upstream };
+}
+function buildMergedCols(upstreams) {
+    const merged = {};
+    for (const up of upstreams) {
+        for (const [k, v] of Object.entries(up.cols)) {
+            merged[k] = k in merged ? merged[k].concat(v) : v.slice();
+        }
+    }
+    return merged;
+}
+function buildCollectedAggs(upstreams) {
+    const collected = {};
+    for (const up of upstreams) {
+        for (const [k, v] of Object.entries(up.aggs)) {
+            const vals = Array.isArray(v) ? v : [v];
+            collected[k] = k in collected ? collected[k].concat(vals) : vals.slice();
+        }
+    }
+    return collected;
+}
 // ── Engine ────────────────────────────────────────────────────────────────────
 /**
  * A typed computation engine that applies sequential row expressions and aggregate
@@ -7,34 +63,20 @@ import { sum, compile } from 'https://cdn.jsdelivr.net/npm/mathjs@14.8.1/+esm';
  *
  * Three kinds of step can be chained in any order:
  *
- * - `.def(name, (row, aggs) => value)` — row expression. Evaluated once per row.
- *   `row` is typed to all input columns + previously defined row columns.
- *   `aggs` is typed to all previously computed aggregates.
- *   Result is appended to each row and added to `headers`.
+ * - `.def(name, (row, aggs, meta) => value)` — row expression. Evaluated once per row.
+ * - `.agg(name, (cols, aggs, aggMeta) => scalar)` — scalar aggregate. Evaluated once per table.
+ * - `.cardinal(name, (cols, aggs, cards) => scalar)` — cross-table aggregate. Evaluated once
+ *   across all tables (available after `.bindX()`).
  *
- * - `.agg(name, (cols, aggs) => scalar)` — scalar aggregate. Evaluated once across
- *   all rows. `cols` contains the full input column arrays. Result is a single
- *   CellValue stored in `aggs`; it does NOT appear in the output rows.
+ * @typeParam Input     - The input table type (column arrays keyed by name).
+ * @typeParam InputAggs - Upstream aggregate contract: per-table scalars produced by the engine
+ *   this one chains onto. Declared values appear as typed keys on the `aggs` parameter in
+ *   `.def()`, `.agg()`, and `.cardinal()` callbacks without any cast.
+ * @typeParam Val       - The cell value type (default `CellValue`; use e.g. `BigNumber` for mathjs).
+ * @typeParam Cols      - Accumulated row type (grows with each `.def()` call).
+ * @typeParam Aggs      - Per-table aggregate type (grows with each `.agg()` call).
+ * @typeParam Cards     - Cross-table cardinal type (grows with each `.cardinal()` call).
  *
- * - `.aggRow(name, (cols, aggs) => array)` — per-row aggregate. Evaluated once across
- *   all rows, returning one value per row. Result is stored in `aggs` as a CellValue[];
- *   it does NOT appear in the output rows. Row expressions access it via `aggs.name[i]`.
- *
- * @typeParam Input - The input table type.
- * @typeParam Val   - The value type for all cells. Defaults to {@link CellValue}; pass a
- *                   narrower union (e.g. `CellValue | Decimal`) to allow library-specific
- *                   types to flow through without casting.
- * @typeParam Cols  - Accumulated row type (grows with each `.def()` call).
- * @typeParam Aggs  - Accumulated aggregate type (grows with each `.agg()` / `.aggRow()` call).
- *
- * @example
- * ``` javascript
- * const engine = new Engine<{ x: number[] }>()
- *   .agg("total",  (cols) => cols.x.reduce((a, b) => (a as number) + (b as number), 0))
- *   .aggRow("pct", (cols, aggs) => cols.x.map((v) => (v as number) / (aggs.total as number)))
- *   .def("share",  (row, aggs) => (aggs.pct as number[])[???])  // see evaluate() for rowIndex
- *   .def("doubled", (row) => row.x * 2);
- * ```
  * @beta
  */
 class Engine {
@@ -65,10 +107,10 @@ class Engine {
         return new Engine([...this.#steps, step], this.#compiler);
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    aggRow(name, fnOrExpr) {
+    cardinal(name, fnOrExpr) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const fn = typeof fnOrExpr === "string" ? this.#makeAggRowFn(fnOrExpr) : fnOrExpr;
-        const step = { kind: "aggRow", name, fn: fn };
+        const fn = typeof fnOrExpr === "string" ? this.#makeCardinalFn(fnOrExpr) : fnOrExpr;
+        const step = { kind: "cardinal", name, fn: fn };
         return new Engine([...this.#steps, step], this.#compiler);
     }
     #requireCompiler(expression) {
@@ -85,16 +127,15 @@ class Engine {
         const evaluate = this.#requireCompiler(expression);
         return (cols, aggs) => evaluate({ ...cols, ...aggs });
     }
-    #makeAggRowFn(expression) {
+    #makeCardinalFn(expression) {
         const evaluate = this.#requireCompiler(expression);
-        return (cols, aggs) => evaluate({ ...cols, ...aggs });
+        return (cols, aggs, cards) => evaluate({ ...cols, ...aggs, ...cards });
     }
     evaluate(headersOrRows, rows) {
         // ── Headerless object-row path ────────────────────────────────────────────
         if (rows === undefined) {
             const objectRows = headersOrRows;
             const aggs = {};
-            // Upfront duplicate-name validation — fails before any mutation
             if (objectRows.length > 0) {
                 const keySet = new Set(Object.keys(objectRows[0]));
                 for (const step of this.#steps) {
@@ -105,53 +146,80 @@ class Engine {
                     }
                 }
             }
-            const buildCols = () => {
-                const cols = {};
+            const buildObjCols = () => {
+                const c = {};
                 if (objectRows.length > 0) {
                     for (const key of Object.keys(objectRows[0])) {
-                        cols[key] = objectRows.map((row) => row[key]);
+                        c[key] = objectRows.map((r) => r[key]);
                     }
                 }
-                return cols;
+                return c;
             };
             let cols = null;
-            let rowIndex = 0;
+            let hlessRowIndex = 0;
             let colIndex = objectRows.length > 0 ? Object.keys(objectRows[0]).length : 0;
-            const meta = { rowIndex: 0, rowCount: objectRows.length, defOffset: 0, colIndex };
-            const rowGet = (offsetOrFilter) => {
+            const cards = {};
+            const hlessGet = (offsetOrFilter) => {
                 if (typeof offsetOrFilter === "function") {
-                    for (let i = 0; i < objectRows.length; i++) {
-                        if (offsetOrFilter(objectRows[i]))
-                            return objectRows[i];
+                    for (const r of objectRows) {
+                        if (offsetOrFilter(r))
+                            return r;
                     }
                     return undefined;
                 }
-                const target = rowIndex + offsetOrFilter;
+                const target = hlessRowIndex + offsetOrFilter;
                 if (target < 0 || target >= objectRows.length)
                     return undefined;
                 return objectRows[target];
             };
+            const hlessUpstream = (filter) => {
+                const result = {};
+                for (let j = 0; j < hlessRowIndex; j++) {
+                    const r = objectRows[j];
+                    if (!filter || filter(r)) {
+                        for (const [k, v] of Object.entries(r)) {
+                            if (!(k in result))
+                                result[k] = [];
+                            result[k].push(v);
+                        }
+                    }
+                }
+                return result;
+            };
+            const hlessMeta = {
+                rowIndex: 0,
+                rowCount: objectRows.length,
+                defOffset: 0,
+                colIndex,
+                tableIndex: 0,
+                tableCount: 1,
+                get: hlessGet,
+                upstream: hlessUpstream,
+            };
+            const singleAggMeta = makeAggMeta(0, 1, [aggs]);
             let defOffset = 0;
             for (const step of this.#steps) {
                 if (step.kind === "agg") {
                     if (!cols)
-                        cols = buildCols();
-                    aggs[step.name] = step.fn(cols, aggs);
+                        cols = buildObjCols();
+                    aggs[step.name] = step.fn(cols, aggs, singleAggMeta);
                 }
-                else if (step.kind === "aggRow") {
+                else if (step.kind === "cardinal") {
                     if (!cols)
-                        cols = buildCols();
-                    aggs[step.name] = step.fn(cols, aggs);
+                        cols = buildObjCols();
+                    const result = step.fn(cols, wrapAggsAsArrays(aggs), cards);
+                    aggs[step.name] = result;
+                    cards[step.name] = result;
                 }
                 else {
                     cols = null;
-                    meta.defOffset = defOffset;
-                    meta.colIndex = colIndex;
-                    for (rowIndex = 0; rowIndex < objectRows.length; rowIndex++) {
-                        meta.rowIndex = rowIndex;
-                        const objectRow = objectRows[rowIndex];
-                        const rowWithGet = { ...objectRow, get: rowGet };
-                        objectRow[step.name] = step.fn(rowWithGet, aggs, meta);
+                    hlessMeta.defOffset = defOffset;
+                    hlessMeta.colIndex = colIndex;
+                    for (hlessRowIndex = 0; hlessRowIndex < objectRows.length; hlessRowIndex++) {
+                        hlessMeta.rowIndex = hlessRowIndex;
+                        const objectRow = objectRows[hlessRowIndex];
+                        const row = { ...objectRow };
+                        objectRow[step.name] = step.fn(row, aggs, hlessMeta);
                     }
                     defOffset++;
                     colIndex++;
@@ -164,7 +232,6 @@ class Engine {
         if (rows.length > 0 && !Array.isArray(rows[0])) {
             const objectRows = rows;
             const aggs = {};
-            // Upfront duplicate-name validation — fails before any mutation
             const headerSet = new Set(headers);
             for (const step of this.#steps) {
                 if (step.kind === "def") {
@@ -173,55 +240,76 @@ class Engine {
                     headerSet.add(step.name);
                 }
             }
-            const buildCols = () => {
-                const cols = {};
-                for (const header of headers) {
-                    cols[header] = objectRows.map((row) => row[header]);
-                }
-                return cols;
+            const buildWithHdrCols = () => {
+                const c = {};
+                for (const h of headers)
+                    c[h] = objectRows.map((r) => r[h]);
+                return c;
             };
             let cols = null;
-            let rowIndex = 0;
-            const meta = {
-                rowIndex: 0,
-                rowCount: objectRows.length,
-                defOffset: 0,
-                colIndex: headers.length,
-            };
-            const rowGet = (offsetOrFilter) => {
+            let whRowIndex = 0;
+            const cards = {};
+            const whGet = (offsetOrFilter) => {
                 if (typeof offsetOrFilter === "function") {
-                    for (let i = 0; i < objectRows.length; i++) {
-                        if (offsetOrFilter(objectRows[i]))
-                            return objectRows[i];
+                    for (const r of objectRows) {
+                        if (offsetOrFilter(r))
+                            return r;
                     }
                     return undefined;
                 }
-                const target = rowIndex + offsetOrFilter;
+                const target = whRowIndex + offsetOrFilter;
                 if (target < 0 || target >= objectRows.length)
                     return undefined;
                 return objectRows[target];
             };
+            const whUpstream = (filter) => {
+                const result = {};
+                for (let j = 0; j < whRowIndex; j++) {
+                    const r = objectRows[j];
+                    if (!filter || filter(r)) {
+                        for (const [k, v] of Object.entries(r)) {
+                            if (!(k in result))
+                                result[k] = [];
+                            result[k].push(v);
+                        }
+                    }
+                }
+                return result;
+            };
+            const whMeta = {
+                rowIndex: 0,
+                rowCount: objectRows.length,
+                defOffset: 0,
+                colIndex: headers.length,
+                tableIndex: 0,
+                tableCount: 1,
+                get: whGet,
+                upstream: whUpstream,
+            };
+            const singleAggMeta = makeAggMeta(0, 1, [aggs]);
             let defOffset = 0;
             for (const step of this.#steps) {
                 if (step.kind === "agg") {
                     if (!cols)
-                        cols = buildCols();
-                    aggs[step.name] = step.fn(cols, aggs);
+                        cols = buildWithHdrCols();
+                    aggs[step.name] = step.fn(cols, aggs, singleAggMeta);
                 }
-                else if (step.kind === "aggRow") {
+                else if (step.kind === "cardinal") {
                     if (!cols)
-                        cols = buildCols();
-                    aggs[step.name] = step.fn(cols, aggs);
+                        cols = buildWithHdrCols();
+                    const result = step.fn(cols, wrapAggsAsArrays(aggs), cards);
+                    aggs[step.name] = result;
+                    cards[step.name] = result;
                 }
                 else {
                     cols = null;
-                    meta.defOffset = defOffset;
-                    meta.colIndex = headers.length;
-                    for (rowIndex = 0; rowIndex < objectRows.length; rowIndex++) {
-                        meta.rowIndex = rowIndex;
-                        const objectRow = objectRows[rowIndex];
-                        const rowWithGet = { ...objectRow, get: rowGet };
-                        objectRow[step.name] = step.fn(rowWithGet, aggs, meta);
+                    whMeta.defOffset = defOffset;
+                    whMeta.colIndex = headers.length;
+                    for (whRowIndex = 0; whRowIndex < objectRows.length; whRowIndex++) {
+                        whMeta.rowIndex = whRowIndex;
+                        const objectRow = objectRows[whRowIndex];
+                        const row = { ...objectRow };
+                        objectRow[step.name] = step.fn(row, aggs, whMeta);
                     }
                     headers.push(step.name);
                     defOffset++;
@@ -236,7 +324,6 @@ class Engine {
                 throw new Error(`Row length ${String(row.length)} does not match headers length ${String(headers.length)}.`);
             }
         }
-        // Upfront duplicate-name validation — fails before any mutation
         const headerSet = new Set(headers);
         for (const step of this.#steps) {
             if (step.kind === "def") {
@@ -245,75 +332,96 @@ class Engine {
                 headerSet.add(step.name);
             }
         }
-        const buildCols = () => {
-            const cols = {};
-            for (let c = 0; c < headers.length; c++) {
-                cols[headers[c]] = arrayRows.map((row) => row[c]);
+        const buildArrayCols = () => {
+            const c = {};
+            for (let i = 0; i < headers.length; i++) {
+                c[headers[i]] = arrayRows.map((r) => r[i]);
             }
-            return cols;
+            return c;
         };
         const aggs = {};
         let cols = null;
-        let rowIndex = 0;
+        let arrRowIndex = 0;
         let currentStepName = "";
-        const makeTargetSnapshot = (idx) => {
+        const cards = {};
+        const makeArrSnapshot = (idx) => {
             const targetRow = arrayRows[idx];
             const result = {};
             const baseCount = headers.length;
             for (let c = 0; c < baseCount && c < targetRow.length; c++) {
                 result[headers[c]] = targetRow[c];
             }
-            // Rows already processed in this step have the current step's value appended.
-            if (idx < rowIndex && targetRow.length > baseCount) {
+            if (idx < arrRowIndex && targetRow.length > baseCount) {
                 result[currentStepName] = targetRow[baseCount];
             }
             return result;
         };
-        const rowGet = (offsetOrFilter) => {
+        const arrGet = (offsetOrFilter) => {
             if (typeof offsetOrFilter === "function") {
-                for (let idx = 0; idx < arrayRows.length; idx++) {
-                    const snap = makeTargetSnapshot(idx);
+                for (let i = 0; i < arrayRows.length; i++) {
+                    const snap = makeArrSnapshot(i);
                     if (offsetOrFilter(snap))
                         return snap;
                 }
                 return undefined;
             }
-            const target = rowIndex + offsetOrFilter;
+            const target = arrRowIndex + offsetOrFilter;
             if (target < 0 || target >= arrayRows.length)
                 return undefined;
-            return makeTargetSnapshot(target);
+            return makeArrSnapshot(target);
         };
-        const snapshotRow = { get: rowGet };
-        const meta = {
+        const arrUpstream = (filter) => {
+            const result = {};
+            for (let j = 0; j < arrRowIndex; j++) {
+                const snap = makeArrSnapshot(j);
+                if (!filter || filter(snap)) {
+                    for (const [k, v] of Object.entries(snap)) {
+                        if (!(k in result))
+                            result[k] = [];
+                        result[k].push(v);
+                    }
+                }
+            }
+            return result;
+        };
+        const snapshotRow = {};
+        const arrMeta = {
             rowIndex: 0,
             rowCount: arrayRows.length,
             defOffset: 0,
             colIndex: headers.length,
+            tableIndex: 0,
+            tableCount: 1,
+            get: arrGet,
+            upstream: arrUpstream,
         };
+        const singleAggMeta = makeAggMeta(0, 1, [aggs]);
         let defOffset = 0;
         for (const step of this.#steps) {
             if (step.kind === "agg") {
                 if (!cols)
-                    cols = buildCols();
-                aggs[step.name] = step.fn(cols, aggs);
+                    cols = buildArrayCols();
+                aggs[step.name] = step.fn(cols, aggs, singleAggMeta);
             }
-            else if (step.kind === "aggRow") {
+            else if (step.kind === "cardinal") {
                 if (!cols)
-                    cols = buildCols();
-                aggs[step.name] = step.fn(cols, aggs);
+                    cols = buildArrayCols();
+                const result = step.fn(cols, wrapAggsAsArrays(aggs), cards);
+                aggs[step.name] = result;
+                cards[step.name] = result;
             }
             else {
                 currentStepName = step.name;
                 cols = null;
-                meta.defOffset = defOffset;
-                meta.colIndex = headers.length;
-                for (rowIndex = 0; rowIndex < arrayRows.length; rowIndex++) {
-                    const row = arrayRows[rowIndex];
+                arrMeta.defOffset = defOffset;
+                arrMeta.colIndex = headers.length;
+                for (arrRowIndex = 0; arrRowIndex < arrayRows.length; arrRowIndex++) {
+                    const row = arrayRows[arrRowIndex];
                     for (let c = 0; c < headers.length; c++) {
                         snapshotRow[headers[c]] = row[c];
                     }
-                    meta.rowIndex = rowIndex;
-                    row.push(step.fn(snapshotRow, aggs, meta));
+                    arrMeta.rowIndex = arrRowIndex;
+                    row.push(step.fn(snapshotRow, aggs, arrMeta));
                 }
                 headers.push(step.name);
                 defOffset++;
@@ -322,40 +430,28 @@ class Engine {
     }
     /**
      * Binds this engine to a specific table, performing all upfront validation once.
-     *
-     * Returns a {@link BoundEngine} whose `evaluate()` can be called repeatedly without
-     * re-passing the table. On each call, computed columns are truncated back to the
-     * input length in-place and re-evaluated — no row recreation needed between calls.
-     *
-     * @param headers - Column name array. Must match the length of every row.
-     * @param rows    - 2D row array. Held by reference; mutate cells between calls to
-     *                  re-evaluate with updated input data.
      */
     bind(headers, rows, aggs) {
         return new BoundEngine(this.#steps, headers, rows, aggs);
     }
+    /**
+     * Chains this engine onto one or more upstream {@link BoundEngine}s.
+     *
+     * Derives headers, rows, and donor aggregates directly from the upstream engines.
+     * Returns a {@link ChainedBoundEngine} with `.evaluate()`, `.aggs`, `.cols`, and `.rowCount`.
+     *
+     * @param upstream  - One or more upstream BoundEngine instances.
+     * @param cardinals - Optional external object to receive cardinal results.
+     */
+    bindX(upstream, cardinals) {
+        const upstreams = Array.isArray(upstream) ? upstream : [upstream];
+        return new ChainedBoundEngine(this.#steps, upstreams, this.#compiler, cardinals);
+    }
 }
+// ── BoundEngine ───────────────────────────────────────────────────────────────
 /**
  * A computation engine pre-bound to a specific table.
  *
- * Obtained via {@link Engine.bind}. Validation (row lengths, duplicate column names)
- * runs once at construction time. Each `evaluate()` call truncates computed columns
- * back to the original input width in-place, then re-runs all steps — no row
- * recreation, no re-validation.
- *
- * @example
- * ```javascript
- * const seeds = Array.from({ length: 1000 }, Math.random);
- * const t = seeds.map(s => [s]);
- *
- * const ctx = new Engine()
- *   .def('doubled', r => r.seed * 2)
- *   .bind(['seed'], t);
- *
- * ctx.evaluate();          // t rows now have [seed, doubled]
- * t[0][0] = 0.99;          // mutate a seed value
- * ctx.evaluate();          // resets to [seed], recomputes — t[0] reflects new seed
- * ```
  * @beta
  */
 class BoundEngine {
@@ -369,11 +465,6 @@ class BoundEngine {
     #ownWidth;
     #rowIndex = 0;
     #currentStepName = "";
-    /**
-     * The aggregate values computed during the most recent `evaluate()` call.
-     * Empty object before the first call. Keys match names passed to `.agg()` and `.aggRow()`.
-     * This is the same object reference passed to `bind()` as the third argument (if any).
-     */
     get aggs() {
         return this.#aggsTarget;
     }
@@ -397,29 +488,49 @@ class BoundEngine {
         this.#inputColCount = headers.length;
         this.#aggsTarget = aggsTarget ?? {};
         this.#ownWidth = headers.length;
-        this.#meta = { rowIndex: 0, rowCount: rows.length, defOffset: 0, colIndex: headers.length };
-        this.#snapshot = {
-            get: (offsetOrFilter) => {
-                if (typeof offsetOrFilter === "function") {
-                    for (let idx = 0; idx < this.#rows.length; idx++) {
-                        const snap = this.#makeTargetSnapshot(idx);
-                        if (offsetOrFilter(snap))
-                            return snap;
-                    }
-                    return undefined;
+        this.#snapshot = {};
+        const boundGet = (offsetOrFilter) => {
+            if (typeof offsetOrFilter === "function") {
+                for (let idx = 0; idx < this.#rows.length; idx++) {
+                    const snap = this.#makeTargetSnapshot(idx);
+                    if (offsetOrFilter(snap))
+                        return snap;
                 }
-                const target = this.#rowIndex + offsetOrFilter;
-                if (target < 0 || target >= this.#rows.length)
-                    return undefined;
-                return this.#makeTargetSnapshot(target);
-            },
+                return undefined;
+            }
+            const target = this.#rowIndex + offsetOrFilter;
+            if (target < 0 || target >= this.#rows.length)
+                return undefined;
+            return this.#makeTargetSnapshot(target);
+        };
+        const boundUpstream = (filter) => {
+            const result = {};
+            for (let idx = 0; idx < this.#rowIndex; idx++) {
+                const snap = this.#makeTargetSnapshot(idx);
+                if (!filter || filter(snap)) {
+                    for (const [k, v] of Object.entries(snap)) {
+                        if (!(k in result))
+                            result[k] = [];
+                        result[k].push(v);
+                    }
+                }
+            }
+            return result;
+        };
+        this.#meta = {
+            rowIndex: 0,
+            rowCount: rows.length,
+            defOffset: 0,
+            colIndex: headers.length,
+            tableIndex: 0,
+            tableCount: 1,
+            get: boundGet,
+            upstream: boundUpstream,
         };
     }
-    /** All columns in their current evaluated state — input columns plus any computed columns. */
     get cols() {
         return this.#buildCols();
     }
-    /** The number of rows in the bound table. */
     get rowCount() {
         return this.#rows.length;
     }
@@ -442,11 +553,7 @@ class BoundEngine {
         }
         return result;
     }
-    /**
-     * Truncates computed columns from the previous call, then re-evaluates all steps
-     * against the bound table in-place.
-     */
-    evaluate() {
+    evaluate(_mode) {
         this.#headers.length = this.#inputColCount;
         for (const row of this.#rows) {
             row.length = this.#inputColCount;
@@ -457,16 +564,20 @@ class BoundEngine {
         meta.rowCount = this.#rows.length;
         let cols = null;
         let defOffset = 0;
+        const cards = {};
+        const aggMeta = makeAggMeta(0, 1, [aggs]);
         for (const step of this.#steps) {
             if (step.kind === "agg") {
                 if (!cols)
                     cols = this.#buildCols();
-                aggs[step.name] = step.fn(cols, aggs);
+                aggs[step.name] = step.fn(cols, aggs, aggMeta);
             }
-            else if (step.kind === "aggRow") {
+            else if (step.kind === "cardinal") {
                 if (!cols)
                     cols = this.#buildCols();
-                aggs[step.name] = step.fn(cols, aggs);
+                const result = step.fn(cols, wrapAggsAsArrays(aggs), cards);
+                aggs[step.name] = result;
+                cards[step.name] = result;
             }
             else {
                 cols = null;
@@ -487,11 +598,6 @@ class BoundEngine {
         }
         this.#ownWidth = this.#headers.length;
     }
-    /**
-     * Truncates any columns appended by a previous {@link EngineGroup} pass, restoring
-     * this engine's own evaluated width. Idempotent — safe to call even if nothing
-     * was appended. Used internally by `EngineGroup.evaluate()`.
-     */
     resetGroupColumns() {
         if (this.#headers.length > this.#ownWidth) {
             this.#headers.length = this.#ownWidth;
@@ -500,277 +606,162 @@ class BoundEngine {
             }
         }
     }
-    /**
-     * Appends one column on top of this engine's own evaluated columns, one row at a time.
-     * Does not truncate first — call {@link resetGroupColumns} once before a batch of
-     * `appendColumn` calls to clear any columns left over from a previous pass.
-     * Used internally by `EngineGroup.evaluate()` to implement group-level `.def()` steps.
-     *
-     * @throws `{Error}` if `name` already exists in the current headers.
-     */
-    appendColumn(name, computeValue) {
+    appendColumn(name, computeValue, chainCtx) {
         if (this.#headers.includes(name)) {
             throw new Error(`Column "${name}" already exists in headers.`);
         }
-        const snapshot = this.#snapshot;
+        const ctx = chainCtx ?? { tableIndex: 0, tableCount: 1, defOffset: 0 };
         const colIndex = this.#headers.length;
         const rowCount = this.#rows.length;
+        const headers = this.#headers;
+        const rows = this.#rows;
         this.#currentStepName = name;
-        for (this.#rowIndex = 0; this.#rowIndex < rowCount; this.#rowIndex++) {
-            const row = this.#rows[this.#rowIndex];
-            for (let c = 0; c < this.#headers.length; c++) {
-                snapshot[this.#headers[c]] = row[c];
+        const chainGet = (offsetOrFilter) => {
+            if (typeof offsetOrFilter === "function") {
+                for (let idx = 0; idx < rows.length; idx++) {
+                    const snap = this.#makeTargetSnapshot(idx);
+                    if (offsetOrFilter(snap))
+                        return snap;
+                }
+                return undefined;
             }
-            row.push(computeValue(snapshot, this.#rowIndex, rowCount, colIndex));
+            const target = this.#rowIndex + offsetOrFilter;
+            if (target < 0 || target >= rows.length)
+                return undefined;
+            return this.#makeTargetSnapshot(target);
+        };
+        const chainUpstream = (filter) => {
+            const result = {};
+            for (let idx = 0; idx < this.#rowIndex; idx++) {
+                const snap = this.#makeTargetSnapshot(idx);
+                if (!filter || filter(snap)) {
+                    for (const [k, v] of Object.entries(snap)) {
+                        if (!(k in result))
+                            result[k] = [];
+                        result[k].push(v);
+                    }
+                }
+            }
+            return result;
+        };
+        const chainMeta = {
+            rowIndex: 0,
+            rowCount,
+            defOffset: ctx.defOffset,
+            colIndex,
+            tableIndex: ctx.tableIndex,
+            tableCount: ctx.tableCount,
+            get: chainGet,
+            upstream: chainUpstream,
+        };
+        const chainSnapshot = {};
+        for (this.#rowIndex = 0; this.#rowIndex < rowCount; this.#rowIndex++) {
+            const row = rows[this.#rowIndex];
+            for (let c = 0; c < headers.length; c++) {
+                chainSnapshot[headers[c]] = row[c];
+            }
+            chainMeta.rowIndex = this.#rowIndex;
+            row.push(computeValue(chainSnapshot, chainMeta));
         }
-        this.#headers.push(name);
+        headers.push(name);
     }
 }
-function makeEngineHandle(target) {
-    const get = (indexOrFilter) => {
-        const cols = target.cols;
-        const rowCount = target.rowCount;
-        const buildAt = (idx) => {
-            const r = {};
-            for (const [name, values] of Object.entries(cols))
-                r[name] = values[idx];
-            return r;
-        };
-        if (typeof indexOrFilter === "function") {
-            for (let i = 0; i < rowCount; i++) {
-                const r = buildAt(i);
-                if (indexOrFilter(r))
-                    return r;
-            }
-            return undefined;
-        }
-        if (indexOrFilter < 0 || indexOrFilter >= rowCount)
-            return undefined;
-        return buildAt(indexOrFilter);
-    };
-    return { get, aggs: target.aggs };
-}
+// ── ChainedBoundEngine ────────────────────────────────────────────────────────
 /**
- * Aggregates across a set of {@link BoundEngine} instances that share the same
- * originating `Engine`.
- *
- * Build the group from a template `Engine` instance (for typing), then call
- * `.def()` / `.agg()` / `.groupAgg()` etc. to add steps. Each method returns a new
- * `EngineGroup` — the builder is immutable. Finally call `evaluate(engines)` with
- * the actual `BoundEngine` instances at runtime.
- *
- * - `.agg(name, (cols, aggs) => scalar)` / `.aggRow(name, (cols, aggs) => array)` —
- *   `cols` is every column from every engine's donor table concatenated; `aggs` starts
- *   as the {@link CollectedAggs} of the template engine's own aggregates (one array per
- *   key, one entry per engine) and grows as group-level aggregates are added.
- *
- * - `.groupAgg(name, (aggCols, aggs) => scalar)` / `.groupAggRow(...)` —
- *   like `.agg()` / `.aggRow()` but `aggCols` is *only* the per-engine collected
- *   donor-aggregate table (no row-level columns).
- *
- * - `.def(name, (row, aggs, meta) => value)` — appends one column to *every* engine's
- *   donor table. `row` includes `row.engine(offset)` for reaching sibling engines;
- *   `aggs` is the group's running aggregate map; `meta` adds `engineIndex` /
- *   `engineCount` to {@link RowMeta}.
- *
- * Call each engine's own `evaluate()` before calling `engineGroup.evaluate(engines)`.
- *
- * @typeParam Input     - Input table type (inferred from the template Engine).
- * @typeParam Val       - Cell value type (inferred from the template Engine).
- * @typeParam Cols      - Accumulated row type; grows with each `.def()` call.
- * @typeParam EngineAggs - The template Engine's own aggregate type; drives the initial
- *                        shape of `aggs` in all group callbacks via {@link CollectedAggs}.
- * @typeParam GroupAggs - Group-level aggregate type; starts as
- *                        `CollectedAggs<EngineAggs>` and grows with each group agg step.
+ * A computation engine chained onto one or more upstream {@link BoundEngine}s.
+ * Obtained via {@link Engine.bindX}.
  *
  * @beta
  */
-class EngineGroup {
+class ChainedBoundEngine {
     #steps;
+    #upstreams;
+    #cardinalsTarget;
     #compiler;
-    #aggsTarget;
-    /**
-     * The aggregate values computed during the most recent `evaluate()` call.
-     * Empty before the first call. Keys match names passed to `.agg()`, `.aggRow()`,
-     * `.groupAgg()`, and `.groupAggRow()`.
-     * This is the same object reference passed as the second or third constructor argument (if any).
-     */
+    constructor(steps, upstreams, compiler, cardinalsTarget) {
+        this.#steps = steps;
+        this.#upstreams = upstreams;
+        this.#compiler = compiler;
+        this.#cardinalsTarget = cardinalsTarget ?? {};
+    }
     get aggs() {
-        return this.#aggsTarget;
+        return this.#cardinalsTarget;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    constructor(engineOrSteps, compilerOrAggs, aggs) {
-        this.#steps = Array.isArray(engineOrSteps) ? engineOrSteps : [];
-        if (typeof compilerOrAggs === "function") {
-            this.#compiler = compilerOrAggs;
-            this.#aggsTarget = aggs ?? {};
+    get cols() {
+        return buildMergedCols(this.#upstreams);
+    }
+    get rowCount() {
+        return this.#upstreams.reduce((sum, up) => sum + up.rowCount, 0);
+    }
+    evaluate(mode = "cascade") {
+        if (mode === "cascade") {
+            for (const up of this.#upstreams)
+                up.evaluate();
         }
-        else {
-            this.#compiler = undefined;
-            this.#aggsTarget = compilerOrAggs ?? aggs ?? {};
+        for (const up of this.#upstreams)
+            up.resetGroupColumns();
+        for (const key of Object.keys(this.#cardinalsTarget)) {
+            delete this.#cardinalsTarget[key];
         }
-    }
-    #requireCompiler(expression) {
-        if (!this.#compiler) {
-            throw new Error(`Expression "${expression}" requires a compiler. Pass one to the EngineGroup constructor: new EngineGroup(engine, compiler).`);
-        }
-        return this.#compiler(expression);
-    }
-    #makeGroupDefFn(expression) {
-        const evaluate = this.#requireCompiler(expression);
-        return (row, aggs) => evaluate({ ...row, ...aggs });
-    }
-    #makeAggFn(expression) {
-        const evaluate = this.#requireCompiler(expression);
-        return (cols, aggs) => evaluate({ ...cols, ...aggs });
-    }
-    #makeAggRowFn(expression) {
-        const evaluate = this.#requireCompiler(expression);
-        return (cols, aggs) => evaluate({ ...cols, ...aggs });
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    def(name, fnOrExpr) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const fn = typeof fnOrExpr === "string" ? this.#makeGroupDefFn(fnOrExpr) : fnOrExpr;
-        const step = { kind: "groupDef", name, fn: fn };
-        return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    agg(name, fnOrExpr) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const fn = typeof fnOrExpr === "string" ? this.#makeAggFn(fnOrExpr) : fnOrExpr;
-        const step = { kind: "agg", name, fn: fn };
-        return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    aggRow(name, fnOrExpr) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const fn = typeof fnOrExpr === "string" ? this.#makeAggRowFn(fnOrExpr) : fnOrExpr;
-        const step = { kind: "aggRow", name, fn: fn };
-        return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    groupAgg(name, fnOrExpr) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const fn = typeof fnOrExpr === "string" ? this.#makeAggFn(fnOrExpr) : fnOrExpr;
-        const step = { kind: "groupAgg", name, fn: fn };
-        return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    groupAggRow(name, fnOrExpr) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const fn = typeof fnOrExpr === "string" ? this.#makeAggRowFn(fnOrExpr) : fnOrExpr;
-        const step = { kind: "groupAggRow", name, fn: fn };
-        return new EngineGroup([...this.#steps, step], this.#compiler, this.#aggsTarget);
-    }
-    /**
-     * Runs all group steps against the supplied bound engines.
-     * Does NOT call `evaluate()` on each engine — the caller controls that.
-     * Safe to call repeatedly with the same or different engine arrays.
-     *
-     * @param engines - The {@link BoundEngine} instances to aggregate. Each must have
-     *                  already had its own `evaluate()` called.
-     * @throws `{Error}` if a `.def()` name already exists in any engine's headers.
-     */
-    evaluate(engines) {
-        for (const engine of engines)
-            engine.resetGroupColumns();
-        // Collect per-engine aggs: scalars → array, arrays → flat concat. Frozen for
-        // the duration of this call — used as the donor-aggregate table for groupAgg/groupAggRow.
-        const aggCols = {};
-        for (const engine of engines) {
-            for (const [name, value] of Object.entries(engine.aggs)) {
-                if (Array.isArray(value)) {
-                    const arr = value;
-                    aggCols[name] = name in aggCols ? aggCols[name].concat(arr) : arr.slice();
-                }
-                else {
-                    aggCols[name] = name in aggCols ? aggCols[name].concat([value]) : [value];
-                }
-            }
-        }
-        const aggs = { ...aggCols };
-        // Upfront duplicate-name validation for .def() steps — fails before any mutation
-        const headerSets = engines.map((engine) => new Set(Object.keys(engine.cols)));
-        for (const step of this.#steps) {
-            if (step.kind === "groupDef") {
-                for (const headerSet of headerSets) {
-                    if (headerSet.has(step.name)) {
-                        throw new Error(`Column "${step.name}" already exists in an engine's headers.`);
-                    }
-                    headerSet.add(step.name);
-                }
-            }
-        }
-        let cols = null;
-        const buildCols = () => {
-            const merged = {};
-            for (const engine of engines) {
-                for (const [name, values] of Object.entries(engine.cols)) {
-                    merged[name] = name in merged ? merged[name].concat(values) : values.slice();
-                }
-            }
-            return merged;
-        };
+        const tableCount = this.#upstreams.length;
+        const cards = {};
         let defOffset = 0;
         for (const step of this.#steps) {
-            if (step.kind === "agg" || step.kind === "aggRow") {
-                if (!cols)
-                    cols = buildCols();
-                const result = step.fn(cols, aggs);
-                aggs[step.name] = result;
-                this.#aggsTarget[step.name] = result;
+            if (step.kind === "cardinal") {
+                const mergedCols = buildMergedCols(this.#upstreams);
+                const collectedAggs = buildCollectedAggs(this.#upstreams);
+                const result = step.fn(mergedCols, collectedAggs, cards);
+                cards[step.name] = result;
+                this.#cardinalsTarget[step.name] = result;
+                for (const up of this.#upstreams) {
+                    up.aggs[step.name] = result;
+                }
             }
-            else if (step.kind === "groupAgg" || step.kind === "groupAggRow") {
-                const result = step.fn(aggCols, aggs);
-                aggs[step.name] = result;
-                this.#aggsTarget[step.name] = result;
+            else if (step.kind === "agg") {
+                for (let tableIndex = 0; tableIndex < tableCount; tableIndex++) {
+                    const upstream = this.#upstreams[tableIndex];
+                    const aggMeta = makeAggMeta(tableIndex, tableCount, this.#upstreams.map((u) => u.aggs));
+                    const result = step.fn(upstream.cols, upstream.aggs, aggMeta);
+                    upstream.aggs[step.name] = result;
+                }
             }
             else {
-                cols = null; // row-level data is about to change; invalidate the merged-cols cache
-                this.#runGroupDef(step, aggs, defOffset, engines);
+                for (let tableIndex = 0; tableIndex < tableCount; tableIndex++) {
+                    const upstream = this.#upstreams[tableIndex];
+                    upstream.appendColumn(step.name, (row, chainMeta) => step.fn(row, upstream.aggs, chainMeta), { tableIndex, tableCount, defOffset });
+                }
                 defOffset++;
             }
         }
     }
-    #runGroupDef(step, aggs, defOffset, engines) {
-        const engineCount = engines.length;
-        for (let engineIndex = 0; engineIndex < engineCount; engineIndex++) {
-            const accessor = (offset) => {
-                const targetIdx = engineIndex + offset;
-                if (targetIdx < 0 || targetIdx >= engineCount)
-                    return undefined;
-                return makeEngineHandle(engines[targetIdx]);
-            };
-            engines[engineIndex].appendColumn(step.name, (row, rowIndex, rowCount, colIndex) => {
-                const groupRow = { ...row, engine: accessor };
-                const meta = { rowIndex, rowCount, defOffset, colIndex, engineIndex, engineCount };
-                return step.fn(groupRow, aggs, meta);
-            });
-        }
-    }
 }
 
-const mathCompiler = (expression) => {
-    const compiled = compile(expression);
-    return (scope) => compiled.evaluate(scope);
-};
-const invoiceEngine = new Engine(mathCompiler)
+// Per-invoice computation engine.  Bind each invoice with .bind(), then evaluate.
+const invoiceEngine = new Engine()
     .def("line_cost", row => row.cost * row.qty)
-    .agg("total_cost", "sum(line_cost)")
-    .agg("total_offer", "sum(offer)")
+    .agg("total_cost", cols => sum(cols.line_cost))
+    .agg("total_offer", cols => sum(cols.offer))
     .def("gross_margin", row => 1 - (row.line_cost / row.offer))
-    .def("weighted_margin", "line_cost/total_cost")
+    .def("weighted_margin", (row, aggs) => row.line_cost / aggs.total_cost)
     .agg("total_mw", cols => sum(cols.weighted_margin))
     .def("margin_score", row => row.gross_margin < 0.3 ? '👎' : '👍');
-function makeInvoiceGroup(aggsTarget) {
-    return new EngineGroup(invoiceEngine, mathCompiler, aggsTarget)
-        .agg("grand_qty", "sum(qty)")
-        .groupAgg("grand_cost", aggCols => sum(aggCols.total_cost))
-        .groupAgg("grand_offer", aggCols => sum(aggCols.total_offer))
-        .groupAgg("grand_margin", (_aggCols, aggs) => 1 - (aggs.grand_cost / aggs.grand_offer))
-        .groupAggRow("invoice_gross_margin", aggCols => aggCols.total_cost.map((tc, i) => 1 - (tc / aggCols.total_offer[i])))
-        .groupAggRow("invoice_weighted_margin", (aggCols, aggs) => aggCols.total_cost.map(tc => tc / aggs.grand_cost));
-}
+// Cross-invoice analytics engine.  Use invoiceGroupEngine.bindX(boundEngines, cardinalsTarget)
+// to chain it onto any number of pre-evaluated invoice BoundEngines.
+//
+// Step ordering (strict declaration order, each step iterates all tables before the next):
+//   1. .agg()      — per table: writes invoice_gross_margin / invoice_weighted_margin to each
+//                    bound engine's own .aggs so the outer template can read them directly.
+//   2. .cardinal() — once across all tables: grand_* values written to cardinalsTarget AND
+//                    to every upstream .aggs (so the later .agg() can read grand_cost).
+//
+// Because cardinals are written back to upstream .aggs, invoice_weighted_margin can reference
+// grand_cost even though it is declared after the cardinals.
+const invoiceGroupEngine = new Engine()
+    .agg("invoice_gross_margin", (_cols, aggs) => 1 - aggs.total_cost / aggs.total_offer)
+    .cardinal("grand_qty", cols => sum(cols.qty))
+    .cardinal("grand_cost", (_cols, aggs) => sum(aggs.total_cost))
+    .cardinal("grand_offer", (_cols, aggs) => sum(aggs.total_offer))
+    .cardinal("grand_margin", (_cols, _aggs, cards) => 1 - cards.grand_cost / cards.grand_offer)
+    .agg("invoice_weighted_margin", (_cols, aggs) => aggs.total_cost / aggs.grand_cost);
 
-export { invoiceEngine, makeInvoiceGroup };
+export { invoiceEngine, invoiceGroupEngine };
