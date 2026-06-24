@@ -736,7 +736,6 @@ class ChainedBoundEngine {
     }
 }
 
-const numAdd = (a, b) => a + b;
 // Per-invoice computation engine.  Bind each invoice with .bind(), then evaluate.
 const invoiceEngine = new Engine()
     .def("line_cost", row => row.cost * row.qty)
@@ -759,9 +758,9 @@ const invoiceEngine = new Engine()
 // grand_cost even though it is declared after the cardinals.
 const invoiceGroupEngine = new Engine()
     .agg("invoice_gross_margin", (_cols, aggs) => 1 - aggs.total_cost / aggs.total_offer)
-    .cardinal("grand_qty", cols => cols.qty.reduce(numAdd, 0))
-    .cardinal("grand_cost", (_cols, aggs) => aggs.total_cost.reduce(numAdd, 0))
-    .cardinal("grand_offer", (_cols, aggs) => aggs.total_offer.reduce(numAdd, 0))
+    .cardinal("grand_qty", cols => sum(cols.qty))
+    .cardinal("grand_cost", (_cols, aggs) => sum(aggs.total_cost))
+    .cardinal("grand_offer", (_cols, aggs) => sum(aggs.total_offer))
     .cardinal("grand_margin", (_cols, _aggs, cards) => 1 - cards.grand_cost / cards.grand_offer)
     .agg("invoice_weighted_margin", (_cols, aggs) => aggs.total_cost / aggs.grand_cost);
 

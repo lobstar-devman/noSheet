@@ -24,8 +24,6 @@ type InvoiceAggs = {
     total_mw: number;
 };
 
-const numAdd = (a: number, b: number) => a + b;
-
 // Per-invoice computation engine.  Bind each invoice with .bind(), then evaluate.
 export const invoiceEngine = new Engine<InvoiceInput>()
     .def("line_cost",       row => row.cost * row.qty)
@@ -33,7 +31,7 @@ export const invoiceEngine = new Engine<InvoiceInput>()
     .agg("total_offer",     cols => sum(cols.offer))
     .def("gross_margin",    row => 1 - (row.line_cost / row.offer))
     .def("weighted_margin", (row, aggs) => row.line_cost / aggs.total_cost)
-    .agg("total_mw",        cols => sum(cols.weighted_margin as number[]))
+    .agg("total_mw",        cols => sum(cols.weighted_margin))
     .def("margin_score",    row => row.gross_margin < 0.3 ? '👎' : '👍');
 
 // Cross-invoice analytics engine.  Use invoiceGroupEngine.bindX(boundEngines, cardinalsTarget)
@@ -51,11 +49,11 @@ export const invoiceGroupEngine = new Engine<InvoiceRow, InvoiceAggs>()
     .agg("invoice_gross_margin",
         (_cols, aggs) => 1 - aggs.total_cost / aggs.total_offer)
     .cardinal("grand_qty",
-        cols => cols.qty.reduce(numAdd, 0))
+        cols => sum(cols.qty))
     .cardinal("grand_cost",
-        (_cols, aggs) => aggs.total_cost.reduce(numAdd, 0))
+        (_cols, aggs) => sum(aggs.total_cost))
     .cardinal("grand_offer",
-        (_cols, aggs) => aggs.total_offer.reduce(numAdd, 0))
+        (_cols, aggs) => sum(aggs.total_offer))
     .cardinal("grand_margin",
         (_cols, _aggs, cards) => 1 - cards.grand_cost / cards.grand_offer)
     .agg("invoice_weighted_margin",
