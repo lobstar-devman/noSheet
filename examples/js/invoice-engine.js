@@ -68,10 +68,14 @@ function buildCollectedAggs(upstreams) {
  * - `.cardinal(name, (cols, aggs, cards) => scalar)` — cross-table aggregate. Evaluated once
  *   across all tables (available after `.bindX()`).
  *
- * @typeParam Input - The input table type.
- * @typeParam Val   - The value type for all cells.
- * @typeParam Cols  - Accumulated row type (grows with each `.def()` call).
- * @typeParam Aggs  - Accumulated aggregate type (grows with each step).
+ * @typeParam Input     - The input table type (column arrays keyed by name).
+ * @typeParam InputAggs - Upstream aggregate contract: per-table scalars produced by the engine
+ *   this one chains onto. Declared values appear as typed keys on the `aggs` parameter in
+ *   `.def()`, `.agg()`, and `.cardinal()` callbacks without any cast.
+ * @typeParam Val       - The cell value type (default `CellValue`; use e.g. `BigNumber` for mathjs).
+ * @typeParam Cols      - Accumulated row type (grows with each `.def()` call).
+ * @typeParam Aggs      - Per-table aggregate type (grows with each `.agg()` call).
+ * @typeParam Cards     - Cross-table cardinal type (grows with each `.cardinal()` call).
  *
  * @beta
  */
@@ -732,6 +736,7 @@ class ChainedBoundEngine {
     }
 }
 
+const numAdd = (a, b) => a + b;
 // Per-invoice computation engine.  Bind each invoice with .bind(), then evaluate.
 const invoiceEngine = new Engine()
     .def("line_cost", row => row.cost * row.qty)
@@ -745,25 +750,19 @@ const invoiceEngine = new Engine()
 // to chain it onto any number of pre-evaluated invoice BoundEngines.
 //
 // Step ordering (strict declaration order, each step iterates all tables before the next):
-//   1. .agg()     — per table: invoice_gross_margin and invoice_weighted_margin written to
-//                   each bound engine's own .aggs so the outer template can read them directly.
+//   1. .agg()      — per table: writes invoice_gross_margin / invoice_weighted_margin to each
+//                    bound engine's own .aggs so the outer template can read them directly.
 //   2. .cardinal() — once across all tables: grand_* values written to cardinalsTarget AND
-//                   to every upstream .aggs (so the later .agg() can read grand_cost).
+//                    to every upstream .aggs (so the later .agg() can read grand_cost).
 //
 // Because cardinals are written back to upstream .aggs, invoice_weighted_margin can reference
 // grand_cost even though it is declared after the cardinals.
 const invoiceGroupEngine = new Engine()
-    .agg("invoice_gross_margin", (_cols, aggs) => {
-    // aggs carries scalar values from invoiceEngine: total_cost, total_offer, etc.
-    return 1 - aggs.total_cost / aggs.total_offer;
-})
-    .cardinal("grand_qty", cols => sum(cols["qty"]))
-    .cardinal("grand_cost", (_cols, aggs) => sum(aggs["total_cost"]))
-    .cardinal("grand_offer", (_cols, aggs) => sum(aggs["total_offer"]))
-    .cardinal("grand_margin", (_cols, _aggs, cards) => 1 - (cards["grand_cost"]) / (cards["grand_offer"]))
-    .agg("invoice_weighted_margin", (_cols, aggs) => {
-    // grand_cost was written to this table's aggs by the cardinal step above.
-    return aggs.total_cost / aggs.grand_cost;
-});
+    .agg("invoice_gross_margin", (_cols, aggs) => 1 - aggs.total_cost / aggs.total_offer)
+    .cardinal("grand_qty", cols => cols.qty.reduce(numAdd, 0))
+    .cardinal("grand_cost", (_cols, aggs) => aggs.total_cost.reduce(numAdd, 0))
+    .cardinal("grand_offer", (_cols, aggs) => aggs.total_offer.reduce(numAdd, 0))
+    .cardinal("grand_margin", (_cols, _aggs, cards) => 1 - cards.grand_cost / cards.grand_offer)
+    .agg("invoice_weighted_margin", (_cols, aggs) => aggs.total_cost / aggs.grand_cost);
 
 export { invoiceEngine, invoiceGroupEngine };

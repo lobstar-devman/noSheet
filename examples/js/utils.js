@@ -68,7 +68,12 @@ document.addEventListener("DOMContentLoaded", (event) => {
         })
         .then((response) => response.text())
         .then((text) => {
-            element.innerHTML = text;
+            element.innerHTML = text
+                                    .replaceAll("&", "&amp;")
+                                    .replaceAll("<", "&lt;")
+                                    .replaceAll(">", "&gt;")
+                                    .replaceAll('"', "&quot;")
+                                    .replaceAll("'", "&#39;");
             window.Prism.highlightElement(element);
         })
     });
