@@ -27,7 +27,7 @@ type CellValue = number | string | bigint | boolean | object;
 
 The `object` branch exists so that opaque values from external numeric libraries
 (`Decimal`, mathjs's `BigNumber`, etc.) can flow through the library untouched — see
-[§8 Library-agnostic numeric types](#8-library-agnostic-numeric-types).
+[§7 Library-agnostic numeric types](#7-library-agnostic-numeric-types).
 
 An **expression** computes a new column from the columns that exist so far, evaluated
 once per row:
@@ -61,13 +61,13 @@ compile time, not at run time.
 
 Two layers of API are specified:
 
-- **The low-level untyped API** ([§3](#3-the-low-level-api-applydefinitions)) — `Table`,
-  `def()`, `applyDefinitions()`. Cell values are `CellValue` everywhere; callers cast as
-  needed. No compile-time forward-reference protection.
-- **The typed API** ([§4](#4-the-typed-api-engine)–[§7](#7-enginegroup)) — `Engine`,
-  `BoundEngine`, `EngineGroup`. Column types are tracked through a generic type
-  parameter that grows with each declared step, giving IDE autocomplete on `row.<name>`
-  and a compile error for forward references.
+- **The low-level untyped API** ([§3](#3-the-low-level-api-applydefinitions)) —
+  `Table`, `def()`, `applyDefinitions()`. Cell values are `CellValue` everywhere;
+  callers cast as needed. No compile-time forward-reference protection.
+- **The typed API** ([§4](#4-the-typed-api-engine)–[§6](#6-chaindboundengine)) —
+  `Engine`, `BoundEngine`, `ChainedBoundEngine`. Column types are tracked through
+  generic type parameters that grow with each declared step, giving IDE autocomplete on
+  `row.<name>` and a compile error for forward references.
 
 Both layers share the same row-level primitives, specified next.
 
@@ -75,73 +75,110 @@ Both layers share the same row-level primitives, specified next.
 
 These types are used by every evaluation path in both API layers.
 
-### 2.1 `Row` and `RowGet` — sibling-row access
+### 2.1 `Row` — pure data snapshot
 
 ```ts
-type RowGet = (
-  offsetOrFilter: number | ((row: Record<string, CellValue>) => boolean),
-) => Record<string, CellValue> | undefined;
-
-type Row = Record<string, CellValue> & { get: RowGet };
+type Row = Record<string, CellValue>;
 ```
 
-Every row snapshot passed to an expression function carries a `.get()` method in
-addition to the row's own columns (as a property on the snapshot, never a real data
-column — see §2.1.1 for how a same-named column always wins). `.get()` is overloaded by
-the runtime type of its argument:
+A plain object mapping column names to their current cell values. **No methods.** Row
+navigation (`get`, `upstream`) is intentionally separated into `RowMeta` (§2.3), so a
+data column named `get` can never shadow a library intrinsic.
 
-- **`get(offset: number)`** — returns the row at `currentRowIndex + offset`, as a plain
-  object snapshot (no `.get` of its own), or `undefined` if that index is out of bounds
-  (`< 0` or `>= rowCount`).
-  - `get(0)` returns the current row.
-  - **Visibility rule**: within the row loop of the step currently being evaluated, rows
-    *before* the current index already have this step's freshly computed value appended
-    to their snapshot; rows *at or after* the current index do not yet (their value for
-    this step doesn't exist yet). This means `get(-1)` inside a `.def("cumsum", ...)`
-    step can read the previous row's `cumsum` (already computed this pass), but
-    `get(1)` cannot read the next row's `cumsum` (not computed yet).
-- **`get(filter: (row) => boolean)`** — scans rows in order from index `0`, returning the
-  first snapshot for which `filter` returns `true`, or `undefined` if none match. The
-  same visibility rule applies per scanned row.
-
-#### 2.1.1 Never mask a data column
-
-Whatever mechanism attaches `.get` (and, for the typed API, the `RowMeta` third
-argument — see §2.2) to a row snapshot **must never shadow a real column**. The
-established technique: build the snapshot as `{ ...rowData, get: rowGetFn }` — a plain
-object spread, so if the underlying row data happens to contain a key called `get` (or,
-for `RowMeta`, the row-level intrinsics live in a *separate third function argument*,
-never mixed into the row object at all, which makes masking structurally impossible —
-see §2.2). When row data is copied from a live source object/array, copying happens
-*after* attaching the intrinsic so real data always wins on conflict.
-
-### 2.2 `RowMeta` — intrinsic per-row, per-column metadata
-
-Some facts about the current evaluation step are not derivable from `row` or `aggs`
-alone, and must never collide with a column name. They are passed as a **separate third
-argument** to every row-expression function, never merged into `row`:
+### 2.2 `RowGet` — sibling-row access
 
 ```ts
-type RowMeta = {
-  rowIndex: number;   // 0-based index of the current row
-  rowCount: number;   // total number of rows in the table being evaluated
-  defOffset: number;  // 0-based position of the current row-expression step,
-                       // counting row-expression steps only (aggregate steps don't advance it)
-  colIndex: number;   // 0-based position this step's column will occupy in the
-                       // full header row (counts input columns + every earlier
-                       // row-expression column, but not aggregate steps, which
-                       // never appear in headers)
+type RowGet = {
+  (offset: number): Record<string, CellValue> | undefined;
+  (filter: (row: Record<string, CellValue>) => boolean): Record<string, CellValue> | undefined;
 };
 ```
 
-Construction rule: `colIndex` is read as `headers.length` (or, for a headerless table,
-`Object.keys(firstRow).length` plus the count of row-expression steps already applied)
-*before* the current step's column name is appended to headers. `defOffset` is a
-counter that starts at `0` and increments by one after each row-expression step
-finishes (aggregate steps do not touch it). `rowIndex` is updated on every iteration of
-the per-row loop; `rowCount` is fixed for the duration of one `evaluate()` call.
+Two overloads, dispatched on the runtime type of the argument:
 
-### 2.3 Expression function shapes
+- **`get(offset: number)`** — returns the row at `currentRowIndex + offset`, as a plain
+  `Record<string, CellValue>` snapshot (no `.get` method of its own), or `undefined` if
+  that index is out of bounds (`< 0` or `>= rowCount`).
+  - **Visibility rule**: within the row loop of the step currently being evaluated, rows
+    *before* the current index already have this step's freshly computed value in their
+    snapshot; rows *at or after* the current index do not yet. This means `get(-1)` inside
+    a `.def("cumsum", ...)` step can read the previous row's `cumsum` (already
+    computed), but `get(1)` cannot read the next row's `cumsum` (not computed yet).
+  - `get(0)` returns a snapshot of the current row as it exists at the point of this step.
+- **`get(filter: (row) => boolean)`** — scans rows from index `0` returning the first
+  snapshot for which `filter` returns `true`, or `undefined` if none match. The same
+  visibility rule applies per scanned row.
+
+Snapshots returned by `RowGet` are plain objects — they do not carry a `.get` method
+themselves, so callers cannot chain `get(0).get(0)`.
+
+### 2.3 `RowMeta` — per-step row intrinsics
+
+Some facts about the current evaluation step are not derivable from `row` or `aggs`
+alone, and must never collide with a column name. They are passed as a **third argument**
+to every row-expression function, never mixed into `row`:
+
+```ts
+type RowMeta = {
+  rowIndex:   number;  // 0-based index of the current row
+  rowCount:   number;  // total rows in the table being evaluated
+  defOffset:  number;  // 0-based position of the current row-expression step
+                        // counting row-expression steps only (agg/cardinal steps don't advance it)
+  colIndex:   number;  // 0-based header index this step's column will occupy
+                        // (= headers.length before this step's column is appended)
+  tableIndex: number;  // 0-based position of the current table in multi-table mode
+                        // (always 0 for single-table engines)
+  tableCount: number;  // total number of tables in multi-table mode (always 1 for single-table)
+  get:      RowGet;                                                             // sibling-row access (§2.2)
+  upstream: (filter?: (row: Record<string, CellValue>) => boolean) => UpstreamRows;
+                        // returns column arrays for all rows before the current one
+};
+```
+
+`upstream(filter?)` returns a `Record<string, CellValue[]>` where each key is a column
+name and the value is an array of that column's values for all rows with
+`rowIndex < currentRowIndex`, optionally filtered. If the current row is the first
+(`rowIndex === 0`), the result is an empty object.
+
+### 2.4 `AggMeta` — per-step aggregate intrinsics
+
+An analogue of `RowMeta` for `.agg()` steps: provides position within the multi-table
+evaluation and access to other tables' aggregate objects.
+
+```ts
+type AggMetaGet = (
+  indexOrFilter:
+    | number
+    | ((aggs: Record<string, CellValue | CellValue[]>) => boolean),
+) => Record<string, CellValue | CellValue[]> | undefined;
+
+type AggMeta = {
+  tableIndex: number;    // 0-based position of the current table (always 0 in single-table mode)
+  tableCount: number;    // total tables (always 1 in single-table mode)
+  get: AggMetaGet;       // access another table's aggregate object by offset or filter
+  upstream: (filter?: (aggs: Record<string, CellValue | CellValue[]>) => boolean) => UpstreamAggs;
+                         // aggregate arrays for all tables before tableIndex
+};
+```
+
+- **`aggMeta.get(offset: number)`** — returns the aggs object at `tableIndex + offset`,
+  or `undefined` if out of bounds.
+- **`aggMeta.get(filter)`** — returns the first aggs object for which `filter` is `true`.
+- **`aggMeta.upstream(filter?)`** — returns a `Record<string, CellValue[]>` where each
+  key maps to an array of that aggregate's values from all tables with
+  `tableIndex < currentTableIndex` (optionally filtered). In single-table mode this is
+  always `{}`.
+
+### 2.5 `UpstreamRows` and `UpstreamAggs`
+
+```ts
+type UpstreamRows = Record<string, CellValue[]>;   // column arrays from prior rows
+type UpstreamAggs = Record<string, CellValue[]>;   // aggregate arrays from prior tables
+```
+
+Returned by `RowMeta.upstream()` and `AggMeta.upstream()` respectively.
+
+### 2.6 Expression function shapes
 
 ```ts
 type ExprFn = (
@@ -153,30 +190,29 @@ type ExprFn = (
 type AggFn = (
   cols: Record<string, CellValue[]>,
   aggs: Record<string, CellValue | CellValue[]>,
+  aggMeta: AggMeta,
 ) => CellValue;
 
-type AggRowFn = (
+type CardinalFn = (
   cols: Record<string, CellValue[]>,
-  aggs: Record<string, CellValue | CellValue[]>,
-) => CellValue[];
+  aggs: Record<string, CellValue[]>,
+  cards: Record<string, CellValue>,
+) => CellValue;
 ```
 
-- `ExprFn` — a row expression. Called once per row. `row` is the row snapshot (the
-  table's columns plus every column produced by an earlier row-expression step,
-  evaluated before this one); `aggs` holds every aggregate computed before this step;
-  `meta` is `RowMeta`.
-- `AggFn` — a scalar aggregate. Called once across all rows. `cols` is every column
-  available so far as a full array (the table's input columns plus every column
-  produced by an earlier row-expression step); `aggs` holds aggregates computed before
-  this one. Returns a single `CellValue`.
-- `AggRowFn` — a per-row aggregate. Same inputs as `AggFn`, but returns one `CellValue`
-  per row (a `CellValue[]` the same length as the table). The result is stored in
-  `aggs` as an array — row expressions index into it themselves (`aggs.name[meta.rowIndex]`),
-  the array is *not* appended to the table.
+- **`ExprFn`** — a row expression. Called once per row. `row` is a pure data snapshot of
+  all columns available at this step; `aggs` holds every aggregate (and cardinal) computed
+  before this step; `meta` is `RowMeta`.
+- **`AggFn`** — a scalar aggregate. Called once per table. `cols` is every column available
+  so far as a full array (input columns plus every earlier `.def()` column); `aggs` holds
+  aggregates/cardinals computed before this step; `aggMeta` is `AggMeta`.
+- **`CardinalFn`** — a cross-table aggregate. Called once across all tables. `cols` is all
+  columns from all tables concatenated; `aggs` is a per-key *array* of scalar values
+  collected from each table's donor aggregates (one value per table per key); `cards` holds
+  cardinal results computed by earlier `.cardinal()` steps in declaration order.
 
 Because a function with fewer parameters is structurally assignable to a function type
-with more, callers may omit `aggs` and/or `meta` entirely (`(row) => row.x * 2` is a
-valid `ExprFn`).
+with more, callers may omit trailing arguments (`(row) => row.x * 2` is a valid `ExprFn`).
 
 ## 3. The low-level API: `applyDefinitions`
 
@@ -198,51 +234,51 @@ function applyDefinitions(table: Table, definitions: readonly Definition[]): Tab
 `applyDefinitions(table, definitions)`:
 
 1. Resolve the row count: every column's `.length` must be equal; if any two columns
-   disagree, throw `Error("Table columns have unequal lengths: expected <first>, found <len>.")`.
+   disagree, throw
+   `Error("Table columns have unequal lengths: expected <first>, found <len>.")`.
    An empty table (no columns) has row count `0`.
 2. Shallow-copy the input table's columns into a working `columns` record. **The input
    table is never mutated.**
 3. For each definition, in array order:
    a. If `name` already exists as a key in `columns`, throw
       `Error('Column "<name>" already exists in the table.')` — checked per-definition,
-      immediately before that definition runs (not all upfront, unlike the typed API).
+      immediately before that definition runs (not all upfront).
    b. Build a fresh result array of length `rowCount`. For each row index `i` from `0`
       to `rowCount - 1`:
-      - Build a row snapshot: a plain object with one entry per *current* `columns` key,
-        value = that column's value at index `i`.
-      - Build a `get` function exactly as specified in §2.1, scoped to this table (the
-        live `columns` record, including any results already pushed for definitions
-        already fully processed earlier in this loop — but not the *current*
-        definition's own array until it's merged into `columns` after the row loop
-        completes, i.e. `get` does not see the current definition's in-progress
-        results at all from within the same definition's own row loop, only from later
-        definitions).
-      - Attach `get` to the snapshot (`{ ...snapshot, get }`), call `fn(rowWithGet, {})`
-        — note `aggs` is always `{}` at this layer; there is no aggregate concept here.
-        Push the result into the result array.
-   c. Assign `columns[name] = resultArray`.
+      - Build a row snapshot: a plain `Row` object with one entry per *current* `columns`
+        key, value = that column's value at index `i`.
+      - Build `RowMeta` for this row: `rowIndex = i`, `rowCount`, `defOffset` (the count
+        of definitions already finished), `colIndex = Object.keys(columns).length` (before
+        this definition's column is appended), `tableIndex = 0`, `tableCount = 1`, plus a
+        `get` closure and an `upstream` function both scoped to the live `columns` record.
+        The `get` closure implements §2.2's visibility rule: row snapshots from this
+        definition's own in-progress array are **not** visible (the column is only merged
+        into `columns` after the entire row loop completes).
+      - Call `fn(row, {}, meta)` — `aggs` is always `{}` at this layer. Push the result
+        into the result array.
+   c. Assign `columns[name] = resultArray`; increment `defOffset`.
 4. Return `columns` as the new `Table`.
 
-This layer has no `RowMeta` third argument, no aggregates, and no type-level column
-tracking — it exists for callers who want to build/compose `Definition` values without
-the generic-heavy `Engine` API.
+This layer has no aggregate concept and no type-level column tracking — it exists for
+callers who want to build and compose `Definition` values without the generic-heavy
+`Engine` API.
 
 ## 4. The typed API: `Engine`
 
-`Engine` is an **immutable builder**. Each `.def()` / `.agg()` / `.aggRow()` call
+`Engine` is an **immutable builder**. Each `.def()` / `.agg()` / `.cardinal()` call
 returns a *new* `Engine` instance with one more internal step and an extended generic
-type parameter — it never mutates `this`. This is required, not stylistic: the row type
-seen by the next `.def()` call must include the column just declared, and TypeScript
-cannot change a class instance's own generic parameterization in place.
+type parameter — it never mutates `this`.
 
 ### 4.1 Type parameters
 
 ```ts
 class Engine<
-  Input extends Record<string, CellValue[]>,
-  Val extends CellValue = CellValue,
-  Cols extends { [K in keyof Input]: Input[K][number] } = TableToRow<Input>,
-  Aggs extends Record<string, Val | Val[]> = Record<never, never>,
+  Input    extends Record<string, CellValue[]>,
+  InputAggs extends Record<string, CellValue | CellValue[]> = Record<never, never>,
+  Val      extends CellValue = CellValue,
+  Cols     extends { [K in keyof Input]: Input[K][number] } = TableToRow<Input>,
+  Aggs     extends Record<string, Val | Val[]> = Record<never, never>,
+  Cards    extends Record<string, Val> = Record<never, never>,
 > { /* ... */ }
 
 type TableToRow<T extends Record<string, CellValue[]>> = {
@@ -250,18 +286,23 @@ type TableToRow<T extends Record<string, CellValue[]>> = {
 };
 ```
 
-- `Input` — the input table's shape, as column-array types, e.g. `{ cost: number[]; qty: number[] }`.
-  Supplied explicitly by the caller: `new Engine<{ cost: number[]; qty: number[] }>()`.
-- `Val` — the cell value type used everywhere in this engine instance. Defaults to
-  `CellValue`; pass a narrower type (e.g. a `Decimal` class) to let row/agg functions
-  receive and return that type directly, with no casts at the call site (see §8).
-- `Cols` — the accumulated **row type**: scalar (non-array) column types, starting as
-  `TableToRow<Input>` and gaining one key per `.def()` call. This is what makes
-  `row.<name>` autocomplete in an IDE and what makes referencing an undeclared column a
-  compile error.
-- `Aggs` — the accumulated **aggregate type**, starting empty and gaining one key per
-  `.agg()` / `.aggRow()` call (an `.aggRow()` key's value type is `V[]`, an `.agg()`
-  key's is `V`).
+- **`Input`** — the input table's shape as column-array types, e.g.
+  `{ cost: number[]; qty: number[] }`. Supplied explicitly by the caller.
+- **`InputAggs`** — the *upstream aggregate contract*: per-table scalar aggregates produced
+  by the engine this one chains onto (via `.bindX()`). Declared values become available as
+  typed keys on the `aggs` parameter in `.def()`, `.agg()`, and `.cardinal()` callbacks
+  without any cast. Defaults to `Record<never, never>` (no upstream aggs).
+- **`Val`** — the cell value type used throughout this engine instance. Defaults to
+  `CellValue`; pass a narrower type (e.g. a mathjs `BigNumber`) to receive and return
+  that type directly without casts (see §7).
+- **`Cols`** — the accumulated **row type**: scalar (non-array) column types, starting as
+  `TableToRow<Input>` and gaining one key per `.def()` call. Drives IDE autocomplete on
+  `row.<name>` and makes forward references a compile error.
+- **`Aggs`** — the accumulated **per-table aggregate type**, starting empty and gaining
+  one key per `.agg()` call. Distinct from `Cards` (§4.5).
+- **`Cards`** — the accumulated **cross-table cardinal type**, starting empty and gaining
+  one key per `.cardinal()` call. Cardinals are visible in subsequent `.def()` and
+  `.agg()` callbacks via `InputAggs & Aggs & Cards`.
 
 ### 4.2 Constructor
 
@@ -270,11 +311,9 @@ constructor(compiler?: ExprCompiler<Val>)
 ```
 
 Public construction takes only an optional string-expression compiler (§4.6). An
-internal overload `constructor(steps, compiler?)` is used by `.def()`/`.agg()`/`.aggRow()`
-to build the next instance in the chain; it is not part of the public surface other
-implementations need to expose identically, but the *behavior* it produces (each
-chained call returns a new instance carrying all previous steps plus one more) is
-normative.
+internal overload `constructor(steps: Step[], compiler?)` is used by each builder method
+to produce the next immutable instance in the chain; it is not part of the public
+surface but the behavior it produces is normative.
 
 ### 4.3 `.def(name, fn)` — row expression
 
@@ -282,58 +321,112 @@ normative.
 def<Name extends string, V extends Val>(
   name: Name,
   fn: (
-    row: Cols & { [K in keyof Input]: Input[K][number] } & { get: RowGet },
-    aggs: Aggs,
+    row: Cols & { [K in keyof Input]: Input[K][number] },
+    aggs: InputAggs & Aggs & Cards,
     meta: RowMeta,
   ) => V,
-): Engine<Input, Val, Cols & Record<Name, V>, Aggs>
+): Engine<Input, InputAggs, Val, Cols & Record<Name, V>, Aggs, Cards>
+
+// String-expression overload (requires a compiler; only when Input matches Val[]):
+def<Name extends string>(
+  name: Name,
+  expression: [Input] extends [Record<string, Val[]>] ? string : never,
+): Engine<Input, InputAggs, Val, Cols & Record<Name, Val>, Aggs, Cards>
 ```
 
-Appends a row-expression step. At `evaluate()` time it runs once per row (§4.7),
-pushing its result onto each row and appending `name` to the table's headers. The
-returned `Engine`'s `Cols` parameter is `Cols & Record<Name, V>` — so a *subsequent*
-`.def()` can read `row.<name>`, but `fn` itself, typed against the *current* `Cols`
-(before this call), cannot — this is the forward-reference guard:
+Appends a row-expression step. At evaluation time it runs once per row, pushing its
+result onto each row and appending `name` to the header list. The returned `Engine`'s
+`Cols` is `Cols & Record<Name, V>` — so a *subsequent* `.def()` can read `row.<name>`,
+but `fn` itself (typed against the current `Cols`) cannot — this is the forward-reference
+guard:
 
 ```ts
 new Engine<{ x: number[] }>()
-  .def("result2", (row) => row.result1 + 3)  // compile error: 'result1' not on row's type yet
+  .def("result2", (row) => row.result1 + 3)  // compile error: 'result1' not on row yet
   .def("result1", () => 1 + 2);
 ```
 
-A second overload accepts a string expression instead of a function — only when `Val`
-exactly matches every column's value type (`[Input] extends [Record<string, Val[]>] ? string : never`)
-— and requires a compiler to have been supplied to the constructor (§4.6).
+`aggs` is typed as `InputAggs & Aggs & Cards` — so callers see all three categories of
+previously computed scalar results without any cast when those categories are declared.
 
 ### 4.4 `.agg(name, fn)` — scalar aggregate
 
 ```ts
 agg<Name extends string, V extends Val>(
   name: Name,
-  fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: Aggs) => V,
-): Engine<Input, Val, Cols, Aggs & Record<Name, V>>
+  fn: (
+    cols: Input & { [K in keyof Cols]: Cols[K][] },
+    aggs: InputAggs & Aggs & Cards,
+    aggMeta: AggMeta,
+  ) => V,
+): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, V>, Cards>
+
+// String-expression overload:
+agg<Name extends string>(
+  name: Name,
+  expression: [Input] extends [Record<string, Val[]>] ? string : never,
+): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, Val>, Cards>
 ```
 
-Appends an aggregate step. At `evaluate()` time it runs once across all rows, *before*
-any subsequent step (§4.7), and its result is stored under `aggs.<name>` — it is never
-added to headers or to any row. `cols`'s type is the input columns at their native
-array types, plus every key already in `Cols` re-typed as `Val[]` (a deliberately loose
-typing: `Cols` tracks scalar per-row types, but here we need the array form).
+Appends an aggregate step. Runs once per table (once in single-table mode, once *per
+upstream table* when running via `ChainedBoundEngine`). Its result is stored under
+`aggs.<name>` on the relevant table's aggregate object — never added to headers or rows.
+
+`cols` type: the input columns at their native array types, plus every key already in
+`Cols` re-typed as its specific array form (`Cols[K][]`, not just `Val[]`), so e.g. a
+column defined as returning `number` has `cols.<name>: number[]` — no cast needed for
+`sum()` or similar typed functions.
+
+`aggs` is `InputAggs & Aggs & Cards` — the same union as in `.def()`.
 
 A string-expression overload exists, symmetric to `.def()`'s.
 
-### 4.5 `.aggRow(name, fn)` — per-row aggregate
+### 4.5 `.cardinal(name, fn)` — cross-table aggregate
 
 ```ts
-aggRow<Name extends string, V extends Val>(
+cardinal<Name extends string, V extends Val>(
   name: Name,
-  fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: Aggs) => V[],
-): Engine<Input, Val, Cols, Aggs & Record<Name, V[]>>
+  fn: (
+    cols: (Input & { [K in keyof Cols]: Cols[K][] }) & Record<string, CellValue[]>,
+    aggs: { [K in keyof (InputAggs & Aggs)]: Array<(InputAggs & Aggs)[K]> } & Record<string, CellValue[]>,
+    cards: Cards & Record<string, CellValue>,
+  ) => V,
+): Engine<Input, InputAggs, Val, Cols, Aggs, Cards & Record<Name, V>>
+
+// String-expression overload:
+cardinal<Name extends string>(
+  name: Name,
+  expression: [Input] extends [Record<string, Val[]>] ? string : never,
+): Engine<Input, InputAggs, Val, Cols, Aggs, Cards & Record<Name, Val>>
 ```
 
-Same inputs as `.agg()`, but returns one value per row; the result is stored as
-`aggs.<name>: V[]`. Row expressions index into it themselves: `aggs.name[meta.rowIndex]`.
-A string-expression overload exists, symmetric to `.def()`'s.
+Appends a cardinal step — a cross-table aggregate evaluated **once** across all tables.
+
+**Callback parameter types:**
+
+- **`cols`** — typed input and def columns as arrays, the same as `.agg()`'s `cols` but
+  merged across all upstream tables. For declared `Input`/`Cols` keys, element types are
+  preserved (`cols.qty: number[]`). Undeclared keys fall back to `CellValue[]` via the
+  `& Record<string, CellValue[]>` intersection.
+- **`aggs`** — the *collected* form of per-table scalar aggregates. Each key from
+  `InputAggs & Aggs` maps to an array of that scalar's value from each upstream table
+  (e.g. `aggs.total_cost: number[]` if `total_cost` is declared as `number` in
+  `InputAggs`). The `& Record<string, CellValue[]>` fallback preserves access to
+  undeclared keys as `CellValue[]`.
+- **`cards`** — only the cardinals computed by earlier `.cardinal()` steps in this engine,
+  in declaration order. Typed via `Cards`; unknown keys fall back to `CellValue` via
+  `& Record<string, CellValue>`.
+
+**Return type change**: only `Cards` grows (not `Aggs`). Subsequent `.def()` and `.agg()`
+callbacks see the cardinal result via `Cards` (through the `InputAggs & Aggs & Cards`
+union in their `aggs` parameter).
+
+**Single-table mode**: when run via `BoundEngine.evaluate()`, the cardinal runs once on
+the single table's own columns and aggregates. The `aggs` argument is the single table's
+agg object with each value wrapped in a 1-element array (`wrapAggsAsArrays`). The result
+is stored in `aggs[name]` *and* in an internal `cards` accumulator (so subsequent
+cardinals in the same engine can read it via their `cards` argument). The result does
+**not** appear as a column in the table.
 
 ### 4.6 `ExprCompiler` — string-expression support
 
@@ -343,41 +436,25 @@ type ExprCompiler<V extends CellValue = CellValue> =
 ```
 
 A compiler is a two-stage function: the outer call compiles a string expression once;
-the returned function evaluates it against a scope object, once per row/column
-evaluation. If a string expression is passed to `.def()`/`.agg()`/`.aggRow()` without a
+the returned function evaluates it against a scope object once per row/column evaluation.
+If a string expression is passed to `.def()`, `.agg()`, or `.cardinal()` without a
 compiler having been supplied to the constructor, throw:
 
 ```
 Expression "<expression>" requires a compiler. Pass one to the Engine constructor: new Engine(compiler).
 ```
 
-When a compiler is in play:
+When a compiler is in play, each step type wraps the compiled evaluator differently:
 
-- A `.def()` string expression is wrapped as `(row, aggs) => evaluate({ ...row, ...aggs })`
-  — the compiled expression's scope is a flat merge of the row snapshot and the current
-  aggregates (column names and aggregate names share one namespace; later keys in the
-  merge — `aggs` — win on collision).
-- A `.agg()` string expression is wrapped as `(cols, aggs) => evaluate({ ...cols, ...aggs })`.
-- A `.aggRow()` string expression is wrapped the same way as `.agg()`, with the
-  evaluated result treated as a `CellValue[]`.
-
-Example (mathjs):
-
-```ts
-const math = create(all, { number: "BigNumber" });
-const mathCompiler: ExprCompiler<BigNumber> = (expression) => {
-  const compiled = math.compile(expression);
-  return (scope) => compiled.evaluate(scope) as BigNumber | BigNumber[];
-};
-new Engine<{ price: BigNumber[]; qty: BigNumber[] }, BigNumber>(mathCompiler)
-  .def("cost", "price * qty");
-```
+- **`.def()` string** — `(row, aggs) => evaluate({ ...row, ...aggs })`
+- **`.agg()` string** — `(cols, aggs) => evaluate({ ...cols, ...aggs })`
+- **`.cardinal()` string** — `(cols, aggs, cards) => evaluate({ ...cols, ...aggs, ...cards })`
 
 ### 4.7 `.evaluate(...)` — three call shapes
 
 `evaluate` is overloaded on its arguments; the runtime picks a code path based on what
-was actually passed. All three paths execute the same conceptual steps loop and the
-same per-step semantics (§4.7.4); they differ in how the table is stored and mutated.
+was passed. All three paths execute the same conceptual step loop and the same per-step
+semantics (§4.7.4); they differ in how the table is stored and mutated.
 
 ```ts
 evaluate(headers: string[], rows: Val[][]): void;
@@ -387,68 +464,64 @@ evaluate(rows: Array<Record<string, Val>>): void;
 
 #### 4.7.1 Array-row path: `evaluate(headers, rows: Val[][])`
 
-The primary, most efficient path. `rows` is a 2D array; `headers[i]` names column `i`
-in every row.
+The primary, most efficient path. `rows` is a 2D array; `headers[i]` names column `i`.
 
-1. **Validate**: every row's `.length` must equal `headers.length`, else throw
+1. **Validate row lengths**: every row's `.length` must equal `headers.length`, else throw
    `Error("Row length <row.length> does not match headers length <headers.length>.")`.
-2. **Validate upfront, atomically**: walk all steps; for every row-expression step,
-   check its name isn't already in a running copy of the header set (seeded from
-   `headers`), else throw `Error('Column "<name>" already exists in headers.')`; add it
-   to the running set as it's "claimed", so two new steps can't collide with each
-   other either. This entire check happens *before* any row is touched.
-3. Build a `cols` cache (lazily, the first time an aggregate step needs it): one array
-   per header, sliced from the current `rows`.
-4. Maintain one mutable row snapshot object (`Row`) reused across the whole evaluation,
-   refreshed before each row of each row-expression step, plus a `RowMeta` object
-   reused the same way, plus a `get` closure as specified in §2.1 (built once, closing
-   over the mutable "current row index" and "current step name" variables).
-5. Walk steps in declaration order:
-   - **Aggregate step** (`agg`/`aggRow`): if the `cols` cache is stale (`null`), rebuild
-     it. Call the step's function with `(cols, aggs)`; store the result at
-     `aggs[step.name]`.
-   - **Row-expression step**: invalidate the `cols` cache (`null` — the table is about
-     to grow a column). Set `meta.defOffset`/`meta.colIndex` for this step (§2.2). For
-     each row index from `0` to `rows.length - 1`: refresh the snapshot object's
-     properties from the current header list and this row's values, set
-     `meta.rowIndex`, call the step's function with `(snapshot, aggs, meta)`, and
-     `.push()` the result onto the row (in place). After all rows: `headers.push(name)`;
-     increment the `defOffset` counter.
+2. **Validate names upfront, atomically**: walk all steps; for every `.def()` step, check
+   its name is not already in a running copy of the header set (seeded from `headers`),
+   else throw `Error('Column "<name>" already exists in headers.')`; add it to the set as
+   it's "claimed" so two steps cannot collide with each other either. This check completes
+   before any row is touched.
+3. Maintain one mutable snapshot object reused across the evaluation, refreshed before
+   each row of each `.def()` step. Maintain a `RowMeta` object, reused the same way.
+   Maintain `get`/`upstream` closures scoped to a mutable "current row index" variable.
+4. Walk steps in declaration order — see §4.7.4.
 
 #### 4.7.2 With-headers object-row path: `evaluate(headers, rows: Array<Record<string, Val>>)`
 
-`rows[i]` is a plain object keyed by column name. Mechanically identical to §4.7.1
-except: there is no fixed-width array to bounds-check (so no row-length validation
-step); a fresh `rowWithGet` object (`{ ...row, get }`) is built per row per
-row-expression step (so a real data property named `get` is never overwritten — see
-§2.1.1); a row-expression step's result is assigned as `objectRow[step.name] = value`
-directly onto the original object (no `headers.push` needed for the object itself, but
-the `headers` array argument is still pushed to, since it's the caller's bookkeeping of
-column order); `cols` is built by reading `Object.keys` off `headers` instead of
-inspecting array positions. Duplicate-name validation works the same way, seeded from
-`headers`.
+Mechanically identical to §4.7.1 except: no row-length validation (plain objects have no
+fixed width); a fresh row snapshot (`{ ...row }`) is built per row per `.def()` step; a
+step's result is assigned directly onto the original object (`objectRow[step.name] = value`);
+`headers` is still pushed to for column-order bookkeeping.
 
 #### 4.7.3 Headerless object-row path: `evaluate(rows: Array<Record<string, Val>>)`
 
-Identical to §4.7.2, except there is no `headers` array at all: the initial column set
-is derived from `Object.keys(rows[0])` (or treated as empty if `rows.length === 0`),
-and `colIndex`/duplicate-name validation are seeded from that key set instead of an
-explicit `headers` array. Nothing is pushed to any externally visible header list — the
-caller has no `headers` variable in this call shape.
+Identical to §4.7.2 except there is no `headers` array: the initial column set is
+derived from `Object.keys(rows[0])` (or empty if `rows.length === 0`), and `colIndex`
+and duplicate-name validation are seeded from that key set. Nothing is pushed to any
+externally visible header list.
 
 #### 4.7.4 Shared per-step contract (all three paths)
 
-- Steps run in declaration order, full stop. There is no dependency-based reordering.
-- An aggregate step's `cols` reflects every column that exists *at that point in the
-  declaration order* — i.e. it sees columns from row-expression steps declared earlier,
-  but not from ones declared later (even though those later steps haven't run yet
-  regardless).
-- A row-expression step's row snapshot for row `i` sees: every original input column,
-  every column from an earlier row-expression step (already computed for this row), and
-  nothing from a later row-expression step or from this same step's other rows beyond
-  what `.get()`'s visibility rule (§2.1) allows.
-- `aggs` accumulates across the *entire* steps array — both row-expression and
-  aggregate functions read the same growing `aggs` object.
+Steps run in **declaration order**, full stop. No dependency-based reordering.
+
+For each step:
+
+- **`.agg()` step**: if the `cols` cache is stale, rebuild it (one array per current
+  header from the current rows). Call `fn(cols, aggs, aggMeta)` with
+  `aggMeta = makeAggMeta(0, 1, [aggs])` (single-table: `tableIndex = 0`,
+  `tableCount = 1`). Store the result at `aggs[step.name]`. The `cols` cache is not
+  invalidated by this step.
+- **`.cardinal()` step**: if the `cols` cache is stale, rebuild it. Call
+  `fn(cols, wrapAggsAsArrays(aggs), cards)` where `wrapAggsAsArrays` converts each
+  scalar value in `aggs` to a 1-element array. Store the result at `aggs[step.name]` and
+  at `cards[step.name]`. The `cards` object accumulates across all cardinal steps in this
+  evaluation. The `cols` cache is not invalidated by this step.
+- **`.def()` step**: invalidate the `cols` cache. Set `meta.defOffset` and
+  `meta.colIndex`. For each row index from `0` to `rowCount - 1`: refresh the snapshot
+  from the current header list and this row's values; set `meta.rowIndex`; call
+  `fn(snapshot, aggs, meta)`; push the result onto the row (array path) or assign it to
+  the object (object paths). After all rows: append `name` to headers; increment
+  `defOffset`.
+
+An aggregate step's `cols` reflects every column that exists *at that point in
+declaration order* — columns from `.def()` steps declared earlier but not from ones
+declared later.
+
+`aggs` accumulates across the entire step loop — later steps can always read results from
+earlier steps, whether `.agg()`, `.cardinal()`, or `.def()` (for `.def()` callbacks,
+`aggs` gives the scalar cardinal/aggregate values, not row-by-row arrays).
 
 ### 4.8 `.bind(headers, rows, aggs?)` → `BoundEngine`
 
@@ -461,15 +534,37 @@ bind(
 ```
 
 Performs all of §4.7.1's upfront validation **once**, and returns a `BoundEngine`
-(§5) that can `evaluate()` repeatedly against the same table without re-validating or
-recreating rows. The optional third argument lets multiple `BoundEngine`s (from the same
-or different `Engine`s) write their aggregate results into separate caller-supplied
-objects — see §6 and §7.
+(§5) that can `evaluate()` repeatedly against the same table without re-validating. The
+optional `aggs` argument lets multiple `BoundEngine`s write their aggregate results into
+separate caller-supplied objects — each object is returned verbatim by that engine's
+`.aggs` getter.
+
+### 4.9 `.bindX(upstream, cardinals?)` → `ChainedBoundEngine`
+
+```ts
+bindX(
+  upstream: BoundEngine | BoundEngine[],
+  cardinals?: Record<string, CellValue>,
+): ChainedBoundEngine
+```
+
+Chains this engine onto one or more already-bound upstream `BoundEngine`s. Returns a
+`ChainedBoundEngine` (§6). Derives headers, rows, and donor aggregates directly from the
+upstream engines — no headers array is needed.
+
+- **Single-table chaining** (one `BoundEngine`): useful for composing engine definitions
+  from separate modules; the chained engine's `.def()` steps append columns to the single
+  upstream table.
+- **Multi-table mode** (array of `BoundEngine`s): `.cardinal()` steps run once across all
+  tables; `.agg()` and `.def()` steps run once *per table* in table order.
+
+The optional `cardinals` object is stored by reference and written into by each cardinal
+step — it is what `ChainedBoundEngine.aggs` returns.
 
 ## 5. `BoundEngine`
 
-A computation pre-bound to one specific array-row table (`headers: string[]`,
-`rows: CellValue[][]`, held by reference — never copied).
+A computation engine pre-bound to one specific array-row table (`headers: string[]`,
+`rows: CellValue[][]`), held by reference — never copied.
 
 ### 5.1 Construction (via `Engine.bind`, not directly)
 
@@ -482,420 +577,185 @@ constructor(
 )
 ```
 
-- Validate every row's length equals `headers.length` (same error message as §4.7.1).
-- Validate no row-expression step's name collides with `headers` (same atomic,
-  upfront check and error message as §4.7.1).
+- Validate every row's length equals `headers.length` (same error as §4.7.1).
+- Validate no `.def()` step's name collides with `headers` (same atomic, upfront check
+  and error as §4.7.1).
 - Store `steps`, `headers`, `rows` by reference. Store `inputColCount = headers.length`
   (the width to truncate back to on every `evaluate()` call). Store `aggsTarget ?? {}`
-  — this is the object returned by the `.aggs` getter, so a caller-supplied object is
-  written into directly and can be read by other code holding the same reference (this
-  is exactly how `EngineGroup` reads each engine's aggregates).
-- Store `ownWidth = headers.length` — see §5.5; this is *separate* from
-  `inputColCount` and gets updated at the end of every `evaluate()` call.
+  — this is the object returned by the `.aggs` getter.
+- Store `ownWidth = headers.length` — the "watermark" updated at the end of each
+  `evaluate()` call; used by `resetGroupColumns()` to trim any cross-engine columns
+  appended by a `ChainedBoundEngine`.
+- Build persistent `get`/`upstream` closures that close over the mutable `#rowIndex`
+  field — a single closure is created once at construction time, not recreated per row.
 
 ### 5.2 `.aggs` getter
 
-Returns the `aggsTarget` object by reference (not a copy). Empty (`{}`) before the
-first `evaluate()` call unless the caller supplied a pre-populated object.
+Returns the `aggsTarget` object by reference (not a copy). Empty `{}` before the first
+`evaluate()` call unless the caller supplied a pre-populated object.
 
 ### 5.3 `.cols` getter
 
-Computed fresh on every access (not cached) from the current `headers`/`rows`: one
-array per header, mapped from row index to that column's value.
+Computed fresh on every access from the current `headers`/`rows`: one array per header,
+mapped from row index to that column's value.
 
 ### 5.4 `.rowCount` getter
 
 Returns `rows.length`.
 
-### 5.5 `.evaluate()`
-
-1. Truncate: set `headers.length = inputColCount`, and for every row set
-   `row.length = inputColCount` — this discards any columns from a previous call (or
-   from an `EngineGroup` append, §7) unconditionally, every time.
-2. Run every step exactly as in §4.7.1 step 5, reusing one persistent snapshot/`meta`
-   object across calls (fields get overwritten each call, not recreated).
-3. After the steps loop finishes, set `ownWidth = headers.length` — this is the
-   "watermark" §5.6/§5.7 truncate back to, capturing this engine's own width with no
-   group-appended columns included.
-
-Because step 1 always resets to `inputColCount` and replays every step, calling
-`.evaluate()` again after mutating a cell in `rows` recomputes everything correctly —
-this is the documented re-evaluation pattern:
+### 5.5 `.evaluate(_mode?)`
 
 ```ts
-const ctx = new Engine<{ seed: number[] }>().def("doubled", (r) => r.seed * 2).bind(["seed"], rows);
-ctx.evaluate();          // rows now have [seed, doubled]
-rows[0][0] = 0.99;       // mutate a seed value
-ctx.evaluate();          // resets to [seed], recomputes — reflects the new seed
+evaluate(_mode?: "cascade" | "manual"): void
+```
+
+The `mode` argument is accepted (for API compatibility with `ChainedBoundEngine`) but
+ignored — a `BoundEngine` always evaluates its own steps and never triggers upstream
+evaluation.
+
+1. **Truncate**: set `headers.length = inputColCount`, and for every row set
+   `row.length = inputColCount` — discards any columns appended by a previous call or by
+   a `ChainedBoundEngine.appendColumn`.
+2. Run every step exactly as in §4.7.4, reusing the persistent snapshot and `RowMeta`
+   objects (fields are overwritten each call, not recreated).
+3. After the step loop finishes, set `ownWidth = headers.length`.
+
+Calling `.evaluate()` again after mutating a cell in `rows` recomputes everything
+correctly:
+
+```ts
+const ctx = engine.bind(["seed"], rows);
+ctx.evaluate();   // rows now have [seed, doubled]
+rows[0][0] = 0.99;
+ctx.evaluate();   // resets to [seed], recomputes — reflects the new value
 ```
 
 ### 5.6 `.resetGroupColumns()`
 
-Used internally by `EngineGroup` (§7), but part of the class's public surface. If
-`headers.length > ownWidth`, truncate `headers` and every row back to `ownWidth`. A
-no-op otherwise. Idempotent — safe to call repeatedly with no `appendColumn` in between.
+```ts
+resetGroupColumns(): void
+```
 
-### 5.7 `.appendColumn(name, computeValue)`
+If `headers.length > ownWidth`, truncate `headers` and every row back to `ownWidth`.
+A no-op otherwise. Idempotent. Called by `ChainedBoundEngine.evaluate()` at the start of
+each evaluation to remove columns appended by a previous `ChainedBoundEngine` pass.
+
+### 5.7 `.appendColumn(name, computeValue, chainCtx?)`
 
 ```ts
 appendColumn(
   name: string,
-  computeValue: (row: Row, rowIndex: number, rowCount: number, colIndex: number) => CellValue,
+  computeValue: (row: Row, meta: RowMeta) => CellValue,
+  chainCtx?: { tableIndex: number; tableCount: number; defOffset: number },
 ): void
 ```
 
-Used internally by `EngineGroup` (§7) to implement its own `.def()`. Appends exactly
-one column on top of whatever `headers`/`rows` currently hold (does **not** call
-`resetGroupColumns` itself — callers that want a clean append-from-`ownWidth` state must
-call `resetGroupColumns()` themselves first, once, before a batch of `appendColumn`
-calls, so that several `appendColumn` calls in a row correctly stack rather than each
-one clobbering the last):
+Used by `ChainedBoundEngine` to implement its `.def()` step. Appends exactly one column
+to whatever `headers`/`rows` currently hold (does **not** call `resetGroupColumns` — the
+`ChainedBoundEngine` does that once before its step loop begins):
 
-1. If `name` is already in `headers`, throw `Error('Column "<name>" already exists in headers.')`.
-2. Capture `colIndex = headers.length` and `rowCount = rows.length` once, before the
-   loop.
-3. Reuse the same persistent snapshot object and the same `rowIndex`/`currentStepName`
-   bookkeeping used by `.evaluate()` (§5.5), so `row.get()` inside `computeValue` works
-   exactly like a normal row-expression step's `.get()` (§2.1's visibility rule
-   included) — there is no separate "group" implementation of sibling-row access.
-4. For each row index from `0` to `rowCount - 1`: refresh the snapshot from the current
-   headers/row values, call `computeValue(snapshot, rowIndex, rowCount, colIndex)`,
-   `.push()` the result onto the row.
-5. `headers.push(name)`.
+1. If `name` is already in `headers`, throw
+   `Error('Column "<name>" already exists in headers.')`.
+2. Build a `RowMeta` with `colIndex = headers.length`, `rowCount = rows.length`,
+   `tableIndex`/`tableCount`/`defOffset` from `chainCtx` (or `0`, `1`, `0` if absent),
+   plus `get`/`upstream` closures that reuse the same snapshot machinery as
+   `.evaluate()`.
+3. For each row index from `0` to `rowCount - 1`: refresh the snapshot from current
+   headers/row values; set `meta.rowIndex`; call `computeValue(snapshot, meta)`; push
+   the result onto the row.
+4. `headers.push(name)`.
 
-## 6. Donor terminology
+## 6. `ChainedBoundEngine`
 
-`EngineGroup` (§7) operates on a collection of `BoundEngine`s. Two terms:
+A computation engine chained onto one or more upstream `BoundEngine`s. Obtained via
+`Engine.bindX` (§4.9), never constructed directly.
 
-- **Donor table** — the table object/array passed as `rows` to a `BoundEngine` (i.e.
-  what its `.cols` reflects).
-- **Donor aggregate** — the aggregate object a `BoundEngine` writes into and exposes
-  via `.aggs` (whether that object was caller-supplied to `.bind()`'s third argument or
-  defaulted to `{}`).
-
-## 7. `EngineGroup`
-
-Aggregates and extends a collection of `BoundEngine`s that share the same originating
-`Engine` (so every donor aggregate has the same set of keys, each consistently either
-scalar-shaped, from `.agg()`, or array-shaped, from `.aggRow()`, across every engine).
-**The caller is responsible for calling each engine's own `.evaluate()` before calling
-`engineGroup.evaluate(engines)`** — the group never triggers a per-engine evaluation
-itself.
-
-`EngineGroup` is an **immutable builder**, exactly like `Engine`: every
-`.def()`/`.agg()`/`.aggRow()`/`.groupAgg()`/`.groupAggRow()` call returns a *new*
-`EngineGroup` instance with one more internal step and an extended generic type
-parameter. The `BoundEngine[]` to evaluate against is passed at call time to
-`.evaluate()`, not at construction time — the same `EngineGroup` instance can be
-applied to different engine arrays.
+### 6.1 Construction (via `Engine.bindX`, not directly)
 
 ```ts
-type CollectedAggs<
-  A extends Record<string, CellValue | CellValue[]>,
-  Val extends CellValue = CellValue,
-> = { [K in keyof A]: Val[] };
-
-class EngineGroup<
-  Input extends Record<string, CellValue[]>,
-  Val extends CellValue = CellValue,
-  Cols extends { [K in keyof Input]: Input[K][number] } = TableToRow<Input>,
-  EngineAggs extends Record<string, Val | Val[]> = Record<never, never>,
-  GroupAggs extends Record<string, Val | Val[]> = CollectedAggs<EngineAggs, Val>,
-> {
-  constructor(engine: Engine<Input, Val, Cols, EngineAggs>, aggs?: Record<string, CellValue | CellValue[]>)
-  constructor(engine: Engine<Input, Val, Cols, EngineAggs>, compiler: ExprCompiler<Val>, aggs?: Record<string, CellValue | CellValue[]>)
-  get aggs(): Record<string, CellValue | CellValue[]>
-  def<Name extends string, V extends Val>(
-    name: Name,
-    fn: (row: GroupRow & Cols & { [K in keyof Input]: Input[K][number] }, aggs: GroupAggs, meta: GroupRowMeta) => V,
-  ): EngineGroup<Input, Val, Cols & Record<Name, V>, EngineAggs, GroupAggs>
-  agg<Name extends string, V extends Val>(
-    name: Name,
-    fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V,
-  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
-  aggRow<Name extends string, V extends Val>(
-    name: Name,
-    fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V[],
-  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
-  groupAgg<Name extends string, V extends Val>(
-    name: Name,
-    fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V,
-  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
-  groupAggRow<Name extends string, V extends Val>(
-    name: Name,
-    fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V[],
-  ): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
-  evaluate(engines: BoundEngine[]): void
-}
+constructor(
+  steps: Step[],
+  upstreams: BoundEngine[],
+  compiler?: ExprCompiler<CellValue>,
+  cardinalsTarget?: Record<string, CellValue>,
+)
 ```
 
-Like `BoundEngine`, the `aggs` constructor argument is stored by reference and returned
-by the `.aggs` getter — empty `{}` if omitted.
+Stores `steps`, `upstreams`, `compiler`, and `cardinalsTarget ?? {}` by reference.
 
-### 7.1 Type parameters
+### 6.2 `.aggs` getter
 
-- `Input` — the input table's shape (same as the template `Engine`'s `Input`). Inferred
-  from the `Engine` passed to the constructor.
-- `Val` — the cell value type (same as the template `Engine`'s `Val`). Inferred from
-  the constructor argument.
-- `Cols` — the accumulated **group-row type**: starts as `TableToRow<Input>` and gains
-  one key per `.def()` call. This is what makes `row.<name>` autocomplete and forward
-  references a compile error inside `.def()` callbacks — the same mechanism as
-  `Engine.Cols`.
-- `EngineAggs` — the template `Engine`'s own aggregate type (from its `.agg()`/
-  `.aggRow()` declarations). Fixed at construction time; never grows through the builder
-  chain. Used to derive `GroupAggs`'s default and to type `aggCols` in `.groupAgg()`/
-  `.groupAggRow()` callbacks.
-- `GroupAggs` — the accumulated **group aggregate type**: starts as
-  `CollectedAggs<EngineAggs, Val>` (so the pre-seeded donor aggregates are fully typed
-  from the very first step), and gains one key per `.agg()`/`.aggRow()`/`.groupAgg()`/
-  `.groupAggRow()` call — mirroring `Engine.Aggs` growth.
+Returns the `cardinalsTarget` object by reference. This object receives cardinal results
+only — per-table agg results are written directly into each upstream's own `.aggs` (not
+into `cardinalsTarget`).
 
-`CollectedAggs<A, Val>` maps each key of `A` to `Val[]`: scalar donor aggregates (from
-`.agg()`) become one-entry-per-engine arrays; array donor aggregates (from `.aggRow()`)
-are flat-concatenated across engines.
+### 6.3 `.cols` getter
 
-### 7.2 Constructor
+Returns a merged column record: for each column name present in any upstream, the values
+from all upstreams are concatenated in upstream order. Computed fresh on every access.
+
+### 6.4 `.rowCount` getter
+
+Returns the sum of all upstreams' `rowCount` values.
+
+### 6.5 `.evaluate(mode?)`
 
 ```ts
-constructor(engine: Engine<Input, Val, Cols, EngineAggs>, aggs?: Record<string, CellValue | CellValue[]>)
-constructor(engine: Engine<Input, Val, Cols, EngineAggs>, compiler: ExprCompiler<Val>, aggs?: Record<string, CellValue | CellValue[]>)
+evaluate(mode: "cascade" | "manual" = "cascade"): void
 ```
 
-The first argument is a **template engine**: used only to infer `Input`, `Val`, `Cols`,
-and `EngineAggs`. It is never evaluated and holds no row data. Any `Engine` with the
-correct generic shape satisfies this requirement — the same instance used to create the
-`BoundEngine`s is a natural choice.
+- **`cascade`** (default): calls `upstream.evaluate()` on every upstream before running
+  this engine's own steps. Use when the upstream's own rows may have changed.
+- **`manual`**: skips upstream evaluation. Use when the caller has already called each
+  upstream's `.evaluate()` and only wants to re-run the cross-table steps.
 
-The optional `compiler` (second argument, when it is a function) enables string
-expression overloads on all five builder methods (§7.7). The optional `aggs` object
-(last argument in either overload) is stored by reference and returned by `.aggs` —
-defaults to `{}` if omitted.
+**Algorithm:**
 
-An internal overload `constructor(steps: EngineGroupStep[], compiler?, aggs?)` is used
-by each builder method to produce the next immutable instance in the chain; it is not
-part of the public surface, but the *behavior* it produces is normative.
-
-### 7.3 Two kinds of row-level data a group step can see
-
-- **Merged donor-table columns (`cols`)** — every column from every engine's `.cols`,
-  concatenated in engine order, one array per column name. Used by `.agg()`/`.aggRow()`.
-- **Collected donor-aggregate table (`aggCols`)** — built once per `evaluate()` call,
-  from every engine's `.aggs`: for each aggregate name, **scalar** values (from
-  `.agg()`) are collected into one array with one entry per engine
-  (`[engine0Value, engine1Value, …]`); **array** values (from `.aggRow()`) are
-  **flat-concatenated** across engines into one combined array (not kept as one
-  sub-array per engine). Used by `.groupAgg()`/`.groupAggRow()`. This table is frozen
-  for the whole `evaluate()` call — appending columns via `.def()` (§7.6) never changes
-  it, since `.def()` only touches donor *tables*, not donor *aggregates*.
-
-### 7.4 `.agg()` / `.aggRow()` — unchanged shape, group-wide
-
-```ts
-agg<Name extends string, V extends Val>(
-  name: Name,
-  fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V,
-): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
-
-aggRow<Name extends string, V extends Val>(
-  name: Name,
-  fn: (cols: Input & { [K in keyof Cols]: Val[] }, aggs: GroupAggs) => V[],
-): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
-```
-
-- `cols` — the merged donor-table columns (§7.3), rebuilt lazily and invalidated by any
-  preceding `.def()` step in the same `evaluate()` call (mirrors §4.7.4's aggregate-step
-  caching exactly, just one level up).
-- `aggs` — seeded at the start of `evaluate()` with the entire collected donor-aggregate
-  table (§7.3) — so e.g. `aggs.total_cost` is already an array of per-engine totals
-  before any group step runs — and from then on accumulates every group step's own
-  result (`.agg()`, `.aggRow()`, `.groupAgg()`, `.groupAggRow()`) under its name, in
-  declaration order, so later steps can read earlier ones.
-- The result is stored both in this running `aggs` map (so later steps can read it) and
-  written to the `aggsTarget` object exposed by `.aggs`.
-
-String expression overloads are available when a compiler was supplied (§7.7).
-
-### 7.5 `.groupAgg()` / `.groupAggRow()` — additive, operate on `aggCols` only
-
-```ts
-groupAgg<Name extends string, V extends Val>(
-  name: Name,
-  fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V,
-): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V>>
-
-groupAggRow<Name extends string, V extends Val>(
-  name: Name,
-  fn: (aggCols: CollectedAggs<EngineAggs, Val>, aggs: GroupAggs) => V[],
-): EngineGroup<Input, Val, Cols, EngineAggs, GroupAggs & Record<Name, V[]>>
-```
-
-Identical wiring to §7.4, except the first argument is `aggCols` (§7.3) instead of the
-merged row-level `cols` — i.e. "run an aggregate over the array of donor aggregates as
-if it were itself a donor table." `aggCols` never changes within one `evaluate()` call
-(no cache invalidation needed — only `.def()` mutates donor tables, and donor
-aggregates are never touched mid-`evaluate()`). A `.groupAggRow()` result has one value
-per *engine* (not per row) and is most naturally consumed from a later `.def()` step as
-`aggs.<name>[meta.engineIndex]` (§7.6).
-
-String expression overloads are available when a compiler was supplied (§7.7).
-
-### 7.6 `.def(name, fn)` — append a column to every engine's own donor table
-
-```ts
-type EngineAccessor = (
-  offset: number,
-) => { get: AbsoluteRowGet; aggs: Record<string, CellValue | CellValue[]> } | undefined;
-
-type AbsoluteRowGet = (
-  indexOrFilter: number | ((row: Record<string, CellValue>) => boolean),
-) => Record<string, CellValue> | undefined;
-
-type GroupRow = Row & { engine: EngineAccessor };
-
-type GroupRowMeta = RowMeta & {
-  engineIndex: number;  // 0-based position of the engine currently being processed
-  engineCount: number;  // total number of engines in the group
-};
-
-type GroupDefFn = (
-  row: GroupRow,
-  aggs: Record<string, CellValue | CellValue[]>,
-  meta: GroupRowMeta,
-) => CellValue;
-```
-
-The typed signature:
-
-```ts
-def<Name extends string, V extends Val>(
-  name: Name,
-  fn: (row: GroupRow & Cols & { [K in keyof Input]: Input[K][number] }, aggs: GroupAggs, meta: GroupRowMeta) => V,
-): EngineGroup<Input, Val, Cols & Record<Name, V>, EngineAggs, GroupAggs>
-```
-
-For **every** engine in the group, in engine order, appends one column to that engine's
-own donor table, one row at a time — mechanically, this is `engine.appendColumn(name, ...)`
-(§5.7) called once per engine, run *after* each engine's own `.evaluate()` has already
-fully completed (this is a separate pass; `EngineGroup` never re-runs an engine's own
-steps).
-
-- **`row`** — the usual `Row` for the row currently being processed *within the engine
-  currently being processed* — same-engine `.get()` behaves exactly as it does for a
-  plain `Engine`/`BoundEngine` row-expression step (§2.1, including the visibility
-  rule), because it's implemented by the very same snapshot/closure machinery (§5.7
-  step 3) — **plus** a new `.engine(offset)` method:
-  - `offset` is relative to the *current engine's* position in the group's engine
-    array (`0` = itself, `-1` = the previous engine, `1` = the next one). Returns
-    `undefined` if `currentEngineIndex + offset` is out of `[0, engineCount)`.
-  - On success, returns `{ get, aggs }` where `aggs` is that *other* engine's own
-    donor-aggregate object (by reference — always current, even if it was just written
-    by an earlier group step), and `get` is an **absolute-index** row accessor into
-    that engine's *current* donor table (always current, including any earlier
-    `.def()` appends already applied to that engine this `evaluate()` call):
-    - `get(n: number)` — row `n` of that engine's table (n is an absolute index, `0` is
-      always that engine's first row — **not** relative to the current row, since
-      "current row index" has no natural meaning across two tables that may have
-      different row counts), or `undefined` if `n` is out of bounds.
-    - `get(filter)` — scans that engine's rows from index `0`, returns the first match,
-      or `undefined`.
-  - Because engines are processed strictly in order (engine 0's entire row loop for
-    this step finishes before engine 1's begins), `row.engine(-1)` inside engine 1's
-    loop already sees engine 0's value for *this same* `.def()` step; `row.engine(1)`
-    inside engine 0's loop does not yet see engine 1's value for this step (it hasn't
-    run yet). This is the engine-level analogue of the same-table visibility rule in
-    §2.1, and needs no special-casing — it falls out naturally from sequential
-    processing order plus `.cols`/`.aggs` always reading live state.
-- **`aggs`** — the **group's own running aggregate map** (the exact same accumulator
-  described in §7.4/§7.5 — whatever `.agg()`/`.aggRow()`/`.groupAgg()`/`.groupAggRow()`
-  have produced so far in declaration order). It is *not* the current engine's own
-  donor aggregate — reach that explicitly via `row.engine(0).aggs`. This is a
-  deliberate, uniform design: there is exactly one mechanism for "read an engine's
-  aggregate" (`row.engine(offset).aggs`), with no special-cased implicit self.
-- **`meta`** — `RowMeta`'s fields, scoped to the row/step currently being processed for
-  the current engine, plus `engineIndex`/`engineCount`.
-
-Appending a `.def()` column invalidates the cached merged `cols` (§7.4) for any
-`.agg()`/`.aggRow()` step declared after it, exactly mirroring §4.7.4's own-engine
-cache-invalidation-on-row-expression-step behavior, one level up.
-
-A string expression overload is available when a compiler was supplied (§7.7).
-
-### 7.7 `ExprCompiler` — string-expression support
-
-When a compiler is supplied to the constructor (§7.2), all five builder methods gain a
-string-expression overload. The overload is available only when
-`[Input] extends [Record<string, Val[]>]` — the same guard as `Engine`'s string
-overloads (§4.6):
-
-```ts
-def(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
-agg(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
-aggRow(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
-groupAgg(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
-groupAggRow(name: string, expression: [Input] extends [Record<string, Val[]>] ? string : never): EngineGroup<...>
-```
-
-The scope merged for each string expression:
-
-- `.def()` — `{ ...row, ...aggs }` (row snapshot merged with the running group
-  aggregates — same as `Engine`'s `.def()` string path)
-- `.agg()` and `.aggRow()` — `{ ...cols, ...aggs }` (merged donor-table columns plus
-  running group aggregates — same as `Engine`'s `.agg()`/`.aggRow()` string path)
-- `.groupAgg()` and `.groupAggRow()` — `{ ...aggCols, ...aggs }` (donor-aggregate
-  table columns plus running group aggregates)
-
-If a string expression is passed without a compiler having been supplied to the
-constructor, throw:
-
-```
-Expression "<expression>" requires a compiler. Pass one to the EngineGroup constructor: new EngineGroup(engine, compiler).
-```
-
-### 7.8 `.evaluate(engines)` algorithm
-
-```ts
-evaluate(engines: BoundEngine[]): void
-```
-
-1. Call `engine.resetGroupColumns()` (§5.6) on every engine — unconditionally, even if
-   the group has no `.def()` steps at all (cheap no-op if nothing was appended last
-   time). This makes repeated `evaluate()` calls idempotent without requiring the
-   caller to re-run each engine's own `.evaluate()` in between.
-2. Build `aggCols` (§7.3) from every engine's current `.aggs`.
-3. Seed the running `aggs` map as a shallow copy of `aggCols`.
-4. **Upfront, atomic validation**: for every `.def()` step in declaration order, check
-   its name doesn't already exist in any engine's current header set (one running
-   `Set` per engine, seeded from `Object.keys(engine.cols)`, each name added to all of
-   them once validated so two `.def()` steps in the same group can't collide with each
-   other either); on any collision, throw
-   `Error('Column "<name>" already exists in an engine's headers.')` — **before
-   mutating any engine** (this check must run to completion, or fail, prior to step 5
-   starting; it must not be interleaved with appending).
+1. If `mode === "cascade"`, call `.evaluate()` on every upstream in order.
+2. Call `resetGroupColumns()` on every upstream (unconditionally — cheap no-op if nothing
+   was appended last time).
+3. Clear all keys from `cardinalsTarget`.
+4. Initialize a local `cards` accumulator `{}` and `defOffset = 0`.
 5. Walk steps in declaration order:
-   - `agg` / `aggRow`: lazily (re)build merged `cols` if invalidated; call
-     `fn(cols, aggs)`; store the result under that name in both `aggs` and the
-     `aggsTarget` exposed by `.aggs`.
-   - `groupAgg` / `groupAggRow`: call `fn(aggCols, aggs)`; store the result the same way
-     (`aggCols` is never rebuilt mid-call).
-   - `def` (a `GroupDefStep`): invalidate the merged `cols` cache. For every engine, in
-     order, call `engine.appendColumn(name, computeValue)` (§5.7) where `computeValue`
-     wraps the user's `GroupDefFn` exactly as described in §7.6 (building the
-     `EngineAccessor` closure, the `GroupRow`, and the `GroupRowMeta`). Increment the
-     group-level `defOffset` counter once per `.def()` step (shared across all engines
-     for that one step — every engine processing the *same* `.def()` step sees the same
-     `defOffset`; each engine's own `colIndex` is naturally per-engine, since it's
-     whatever that engine's own header length happens to be at that point).
+   - **`.cardinal()` step**: build `mergedCols` (§6.3 logic) and `collectedAggs`
+     (per-key arrays of each upstream's scalar agg values); call
+     `fn(mergedCols, collectedAggs, cards)`; store the result in `cards[name]`,
+     `cardinalsTarget[name]`, and write it back to **every** upstream's `aggs[name]` —
+     this write-back is what allows subsequent `.agg()` steps on the same engine to read
+     the cardinal as a scalar.
+   - **`.agg()` step**: for each upstream (table) in order, build an `AggMeta` with that
+     table's `tableIndex` and all upstreams' agg objects; call
+     `fn(upstream.cols, upstream.aggs, aggMeta)`; write the result into `upstream.aggs[name]`.
+   - **`.def()` step**: call `upstream.appendColumn(name, computeRow, chainCtx)` on every
+     upstream in order (where `computeRow` wraps the step's `fn` against that upstream's
+     own `.aggs`); increment `defOffset` once per `.def()` step.
 
-## 8. Library-agnostic numeric types
+### 6.6 Step-ordering guarantee
 
-`Engine`'s second type parameter, `Val`, defaults to `CellValue` but can be narrowed to
-any class implementing the arithmetic a caller's expressions need (a decimal/bignum
-library, for instance). When narrowed:
+Steps run in strict **declaration order**. For each step, **all upstream tables are
+processed before the next step begins**:
+
+```
+Step 1 (cardinal) → runs once across all tables
+Step 2 (agg)      → upstream[0], upstream[1], …
+Step 3 (def)      → upstream[0], upstream[1], …
+Step 4 (agg)      → upstream[0], upstream[1], …
+```
+
+Because cardinals are written back to each upstream's `.aggs` immediately after they
+run, a later `.agg()` step in declaration order can reference a cardinal result as a
+scalar through its `aggs` parameter even if it was declared *before* the cardinal in the
+source file — it will see it as long as it is declared *after* the cardinal in the step
+sequence.
+
+## 7. Library-agnostic numeric types
+
+`Engine`'s `Val` parameter defaults to `CellValue` but can be narrowed to any class
+implementing the arithmetic a caller's expressions need. When narrowed:
 
 - Row-expression and aggregate functions receive and must return that exact type — no
-  `as Decimal` casts are needed at call sites.
-- `Input`'s column array types must use `Val[]` consistently (`{ amount: Decimal[] }`).
+  casts needed at call sites.
+- `Input`'s column array types must use `Val[]` consistently.
 
 ```ts
 class Decimal {
@@ -904,85 +764,112 @@ class Decimal {
   mul(other: Decimal): Decimal { return new Decimal(this.value * other.value); }
 }
 
-new Engine<{ price: Decimal[]; qty: Decimal[] }, Decimal>()
+new Engine<{ price: Decimal[]; qty: Decimal[] }, Record<never,never>, Decimal>()
   .def("total", (row) => row.price.mul(row.qty))
   .evaluate(headers, rows);
 ```
 
 This works because `CellValue`'s `object` branch accepts any class instance, and every
-generic signature in §4 threads `Val` through consistently rather than hard-coding
-`CellValue` for row/agg/aggRow function parameters and return types.
+generic signature in §4 threads `Val` consistently rather than hard-coding `CellValue`.
 
-## 9. Error reference
+## 8. Error reference
 
 | Condition | Message |
 |---|---|
 | `applyDefinitions`: a definition's name already exists in the table | `Column "<name>" already exists in the table.` |
 | `applyDefinitions`: input columns have unequal lengths | `Table columns have unequal lengths: expected <first>, found <len>.` |
 | `Engine.evaluate` (headerless object-row path): a `.def()` name already exists | `Column "<name>" already exists.` |
-| `Engine.evaluate` (with-headers / array-row paths), `BoundEngine` construction, `BoundEngine.appendColumn`: a `.def()`/group-`.def()` name already exists in headers | `Column "<name>" already exists in headers.` |
+| `Engine.evaluate` (with-headers / array-row paths), `BoundEngine` construction: a `.def()` name already exists in headers | `Column "<name>" already exists in headers.` |
 | `Engine.evaluate` (array-row path), `BoundEngine` construction: a row's length doesn't match `headers.length` | `Row length <row.length> does not match headers length <headers.length>.` |
+| `BoundEngine.appendColumn`: name already exists in headers | `Column "<name>" already exists in headers.` |
 | `Engine`: a string expression was passed without a compiler | `Expression "<expression>" requires a compiler. Pass one to the Engine constructor: new Engine(compiler).` |
-| `EngineGroup`: a string expression was passed without a compiler | `Expression "<expression>" requires a compiler. Pass one to the EngineGroup constructor: new EngineGroup(engine, compiler).` |
-| `EngineGroup.evaluate`: a `.def()` name already exists in any engine's headers | `Column "<name>" already exists in an engine's headers.` |
 
-Every name-collision check across this whole library is **atomic**: it walks the full
-set of steps/engines and throws before any mutation, rather than partially mutating and
-then failing partway through.
+Every name-collision check is **atomic**: it walks the full set of steps before any
+mutation, rather than failing partway through.
 
-## 10. Suggested module layout
+## 9. Module layout
 
 Not normative, but mirrors a clean separation of concerns:
 
-- `expr.ts` — `CellValue`, `Row`, `RowGet`, `RowMeta`, `ExprFn`, `AggFn`, `AggRowFn`
-  (everything in §2).
+- `expr.ts` — `CellValue`, `Row`, `RowGet`, `RowMeta`, `UpstreamRows`, `UpstreamAggs`,
+  `AggMetaGet`, `AggMeta`, `ExprFn`, `AggFn`, `CardinalFn` (§2).
 - `definition.ts` — `Definition`, `def()` (§3).
 - `table.ts` — `Table`, `applyDefinitions()` (§3).
-- `engine.ts` — `ExprCompiler`, `TableToRow`, `CollectedAggs`, the internal `Step`
-  discriminated union, `Engine`, `BoundEngine`, and `EngineGroup` plus its supporting
-  types (`AbsoluteRowGet`, `EngineAccessor`, `GroupRow`, `GroupRowMeta`, `GroupDefFn`)
-  — §4–§7.
+- `engine.ts` — `ExprCompiler`, `TableToRow`, the internal `Step` discriminated union
+  (`DefStep`, `AggStep`, `CardinalStep`), `Engine`, `BoundEngine`, `ChainedBoundEngine` —
+  §4–§6.
 - `index.ts` — re-exports the public surface of all of the above.
 
-## 11. Worked example — multi-invoice grouping
+## 10. Worked example — multi-invoice analysis
 
-End-to-end example exercising every feature in this spec together.
+End-to-end example exercising every feature in this spec.
 
 ```ts
-const invoiceEngine = new Engine<{ cost: number[]; qty: number[] }>()
-  .def("line_cost", (row) => row.cost * row.qty)
-  .agg("total_cost", (cols) => (cols.line_cost as number[]).reduce((a, b) => a + b, 0));
+import { Engine } from "nosheet";
+import { sum } from "mathjs";
 
-const aggs1: Record<string, CellValue | CellValue[]> = {};
-const aggs2: Record<string, CellValue | CellValue[]> = {};
-const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]], aggs1); // line_cost: 20,60; total_cost: 80
-const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]], aggs2);  // line_cost: 20,15; total_cost: 35
+type InvoiceInput = {
+  name:  string[];
+  cost:  number[];
+  qty:   number[];
+  offer: number[];
+};
 
-inv1.evaluate();
-inv2.evaluate();
+// Per-invoice computation. Bind each invoice with .bind(), then evaluate.
+const invoiceEngine = new Engine<InvoiceInput>()
+  .def("line_cost",        row => row.cost * row.qty)
+  .agg("total_cost",       cols => sum(cols.line_cost))   // cols.line_cost: number[]
+  .agg("total_offer",      cols => sum(cols.offer))
+  .def("gross_margin",     row => 1 - row.line_cost / row.offer)
+  .def("weighted_margin",  (row, aggs) => row.line_cost / aggs.total_cost)
+  .agg("total_mw",         cols => sum(cols.weighted_margin))
+  .def("margin_score",     row => row.gross_margin < 0.3 ? "👎" : "👍");
 
-const groupAggs: Record<string, CellValue | CellValue[]> = {};
-new EngineGroup(invoiceEngine, groupAggs)
-  // group-wide row-level aggregate: total quantity across both invoices' line items
-  .agg("total_qty", (cols) => (cols.qty as number[]).reduce((a, b) => a + b, 0))
-  // aggregate-of-aggregates: sum each invoice's own total_cost
-  .groupAgg("grand_total", (aggCols) => (aggCols.total_cost as number[]).reduce((a, b) => a + b, 0))
-  // one value per invoice: each invoice's share of the grand total
-  .groupAggRow("share", (aggCols, aggs) =>
-    (aggCols.total_cost as number[]).map((v) => v / (aggs.grand_total as number)),
-  )
-  // append a column to EVERY invoice's own table, reading the other invoice's total
-  .def("pctOfOtherInvoice", (row, aggs, meta) => {
-    const other = row.engine(meta.engineIndex === 0 ? 1 : -1);
-    const myTotal = row.engine(0)!.aggs.total_cost as number;
-    const otherTotal = (other?.aggs.total_cost as number) ?? 0;
-    return otherTotal === 0 ? 0 : myTotal / otherTotal;
-  })
-  .evaluate([inv1, inv2]);
+// All columns the cross-invoice engine can see.
+type InvoiceRow = InvoiceInput & {
+  line_cost: number[];
+  gross_margin: number[];
+  weighted_margin: number[];
+  margin_score: string[];
+};
 
-// groupAggs.grand_total === 115
-// groupAggs.share === [80/115, 35/115]
-// groupAggs.total_qty === 10
-// inv1.cols.pctOfOtherInvoice === [80/35, 80/35]  (every row of invoice 1 sees the same ratio)
-// inv2.cols.pctOfOtherInvoice === [35/80, 35/80]
+// Upstream agg contract: what invoiceEngine produces.
+type InvoiceAggs = {
+  total_cost:  number;
+  total_offer: number;
+  total_mw:    number;
+};
+
+// Cross-invoice analytics. Use .bindX(boundEngines, cardinalsTarget).
+const invoiceGroupEngine = new Engine<InvoiceRow, InvoiceAggs>()
+  // Per-table agg: each invoice's gross margin
+  .agg("invoice_gross_margin",
+    (_cols, aggs) => 1 - aggs.total_cost / aggs.total_offer)
+  // Cardinals: aggregates across all invoices
+  .cardinal("grand_qty",    cols => cols.qty.reduce((a, b) => a + b, 0))
+  .cardinal("grand_cost",   (_cols, aggs) => aggs.total_cost.reduce((a, b) => a + b, 0))
+  .cardinal("grand_offer",  (_cols, aggs) => aggs.total_offer.reduce((a, b) => a + b, 0))
+  .cardinal("grand_margin", (_cols, _aggs, cards) => 1 - cards.grand_cost / cards.grand_offer)
+  // Per-table agg reading a cardinal (grand_cost was written back to each upstream.aggs)
+  .agg("invoice_weighted_margin",
+    (_cols, aggs) => aggs.total_cost / aggs.grand_cost);
+
+// Bind and evaluate three invoices
+const samples = [invoice1Rows, invoice2Rows, invoice3Rows].map((inputRows, idx) => {
+  const rows  = inputRows.map(r => [...r]);
+  const aggs  = {};
+  const bound = invoiceEngine.bind(["name", "cost", "qty", "offer"], rows, aggs);
+  bound.evaluate();
+  return { rows, aggs, bound };
+});
+
+// Chain the group engine; cardinals land in groupAggs
+const groupAggs = {};
+const chain = invoiceGroupEngine.bindX(samples.map(s => s.bound), groupAggs);
+chain.evaluate("manual");  // upstreams already evaluated above
+
+// groupAggs.grand_cost   — total cost across all invoices
+// groupAggs.grand_margin — overall gross margin
+// samples[0].aggs.invoice_gross_margin   — per-invoice gross margin
+// samples[0].aggs.invoice_weighted_margin — per-invoice weight relative to grand total
 ```
