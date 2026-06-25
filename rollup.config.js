@@ -20,7 +20,7 @@ export default [
 	{
 		input: 'src/index.ts',
 		output: {
-			name: 'noSheet',
+			name: 'nosheet',
 			file: pkg.browser,
 			format: 'umd'
 		},
@@ -48,6 +48,19 @@ export default [
 			{ file: pkg.module, format: 'es', sourcemap: true }
 		]
 	},
+    // Example TypeScript module — bundled to examples/js/, mathjs remapped to CDN
+    {
+        input: 'examples/invoice-engine.ts',
+        external: ['mathjs'],
+        plugins: [
+            typescript({ tsconfig: './tsconfig.examples.json' })
+        ],
+        output: {
+            file: 'examples/js/invoice-engine.js',
+            format: 'es',
+            paths: { 'mathjs': 'https://cdn.jsdelivr.net/npm/mathjs@14.8.1/+esm' }
+        }
+    },
     ...(isDev ? [                      // Development-only plugins (enabled when in dev mode)
       serve({
         open: true,                    // Automatically open the browser when the server starts

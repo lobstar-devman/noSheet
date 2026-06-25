@@ -12,9 +12,9 @@ const baseTable = {
 describe("applyDefinitions — SPEC.md example", () => {
   it("computes net, vat, and total columns", () => {
     const result = applyDefinitions(baseTable, [
-      def("net",   (row: Row) => (row.cost as number)  * (row.quantity as number)),
-      def("vat",   () => 1.2),
-      def("total", (row: Row) => (row.net as number)   * (row.vat as number)),
+      def("net", (row: Row) => (row.cost as number) * (row.quantity as number)),
+      def("vat", () => 1.2),
+      def("total", (row: Row) => (row.net as number) * (row.vat as number)),
     ]);
 
     expect(result["net"]).toEqual([6, 21, 32]);
@@ -77,7 +77,7 @@ describe("applyDefinitions — sequential ordering", () => {
   it("later definitions can reference earlier computed columns", () => {
     const t = { x: [2, 4] };
     const result = applyDefinitions(t, [
-      def("doubled",    (row: Row) => (row.x as number)       * 2),
+      def("doubled", (row: Row) => (row.x as number) * 2),
       def("quadrupled", (row: Row) => (row.doubled as number) * 2),
     ]);
     expect(result["doubled"]).toEqual([4, 8]);
@@ -96,26 +96,23 @@ describe("applyDefinitions — sequential ordering", () => {
 
 describe("applyDefinitions — non-number column types", () => {
   it("string column", () => {
-    const result = applyDefinitions(
-      { cost: [3, 7, 8] },
-      [def("label", (row: Row) => `cost:${String(row.cost)}`)],
-    );
+    const result = applyDefinitions({ cost: [3, 7, 8] }, [
+      def("label", (row: Row) => `cost:${String(row.cost)}`),
+    ]);
     expect(result["label"]).toEqual(["cost:3", "cost:7", "cost:8"]);
   });
 
   it("boolean column", () => {
-    const result = applyDefinitions(
-      { quantity: [2, 3, 4] },
-      [def("active", (row: Row) => (row.quantity as number) > 2)],
-    );
+    const result = applyDefinitions({ quantity: [2, 3, 4] }, [
+      def("active", (row: Row) => (row.quantity as number) > 2),
+    ]);
     expect(result["active"]).toEqual([false, true, true]);
   });
 
   it("bigint column", () => {
-    const result = applyDefinitions(
-      { cost: [3, 7, 8] },
-      [def("bigCost", (row: Row) => BigInt(row.cost))],
-    );
+    const result = applyDefinitions({ cost: [3, 7, 8] }, [
+      def("bigCost", (row: Row) => BigInt(row.cost as number)),
+    ]);
     expect(result["bigCost"]).toEqual([3n, 7n, 8n]);
   });
 });
@@ -127,26 +124,46 @@ describe("applyDefinitions — edge cases", () => {
   });
 
   it("empty table with no rows produces empty result columns", () => {
-    const result = applyDefinitions(
-      { cost: [], quantity: [] },
-      [def("net", (row: Row) => (row.cost as number) * (row.quantity as number))],
-    );
+    const result = applyDefinitions({ cost: [], quantity: [] }, [
+      def("net", (row: Row) => (row.cost as number) * (row.quantity as number)),
+    ]);
     expect(result["net"]).toEqual([]);
   });
 
   it("throws when a definition name collides with an existing column", () => {
-    expect(() =>
-      applyDefinitions(baseTable, [def("cost", () => 0)]),
-    ).toThrow('Column "cost" already exists');
+    expect(() => applyDefinitions(baseTable, [def("cost", () => 0)])).toThrow(
+      'Column "cost" already exists',
+    );
   });
 
   it("throws when table columns have unequal lengths", () => {
     expect(() =>
-      applyDefinitions(
-        { a: [1, 2], b: [1] },
-        [def("r", (row: Row) => (row.a as number) + (row.b as number))],
-      ),
+      applyDefinitions({ a: [1, 2], b: [1] }, [
+        def("r", (row: Row) => (row.a as number) + (row.b as number)),
+      ]),
     ).toThrow("unequal lengths");
+  });
+});
+
+describe("applyDefinitions — RowMeta", () => {
+  it("passes rowIndex, rowCount, defOffset, and colIndex as the third argument", () => {
+    const result = applyDefinitions({ x: [10, 20, 30] }, [
+      def("idx", (_row, _aggs, meta) => meta.rowIndex),
+      def("count", (_row, _aggs, meta) => meta.rowCount),
+      def("offset", (_row, _aggs, meta) => meta.defOffset), // 3rd definition -> 2
+      def("colIdx", (_row, _aggs, meta) => meta.colIndex), // after x, idx, count, offset -> 4
+    ]);
+    expect(result["idx"]).toEqual([0, 1, 2]);
+    expect(result["count"]).toEqual([3, 3, 3]);
+    expect(result["offset"]).toEqual([2, 2, 2]);
+    expect(result["colIdx"]).toEqual([4, 4, 4]);
+  });
+
+  it("a real column named 'rowIndex' is not masked by the meta argument", () => {
+    const result = applyDefinitions({ rowIndex: [5, 6] }, [
+      def("seenColumn", (row: Row) => row.rowIndex),
+    ]);
+    expect(result["seenColumn"]).toEqual([5, 6]);
   });
 });
 

@@ -1,11 +1,11 @@
-import type { CellValue } from "./expr.js";
+import type { CellValue, Row, RowGet, RowMeta, UpstreamRows } from "./expr.js";
 import type { Definition } from "./definition.js";
 
 /**
  * A table is a set of named columns, each holding one cell value per row.
  * All columns must have the same length.
  * Column values may be number, string, bigint, or boolean.
- * 
+ *
  * @beta
  */
 export type Table = Readonly<Record<string, readonly CellValue[]>>;
@@ -18,13 +18,14 @@ export type Table = Readonly<Record<string, readonly CellValue[]>>;
  *
  * @throws `{Error}` if a definition name collides with an existing column.
  * @throws `{Error}` if the table has columns of unequal length.
- * 
+ *
  * @beta
  */
 export function applyDefinitions(table: Table, definitions: readonly Definition[]): Table {
   const rowCount = resolveRowCount(table);
   const columns: Record<string, readonly CellValue[]> = { ...table };
 
+  let defOffset = 0;
   for (const { name, fn } of definitions) {
     if (Object.prototype.hasOwnProperty.call(columns, name)) {
       throw new Error(`Column "${name}" already exists in the table.`);
@@ -32,16 +33,65 @@ export function applyDefinitions(table: Table, definitions: readonly Definition[
 
     const column: CellValue[] = [];
 
+    const buildAt = (idx: number): Record<string, CellValue> => {
+      const r: Record<string, CellValue> = {};
+      for (const [c, vals] of Object.entries(columns)) r[c] = vals[idx];
+      return r;
+    };
+
     for (let i = 0; i < rowCount; i++) {
-      // Build a flat row view from all columns available so far (input + previously computed).
-      const row: Record<string, CellValue> = {};
+      const row: Row = {};
       for (const [colName, values] of Object.entries(columns)) {
         row[colName] = values[i];
       }
-      column.push(fn(row, {}));
+
+      const get: RowGet = (
+        offsetOrFilter: number | ((r: Record<string, CellValue>) => boolean),
+      ): Record<string, CellValue> | undefined => {
+        if (typeof offsetOrFilter === "function") {
+          for (let j = 0; j < rowCount; j++) {
+            const r = buildAt(j);
+            if (offsetOrFilter(r)) return r;
+          }
+          return undefined;
+        }
+        const target = i + offsetOrFilter;
+        if (target < 0 || target >= rowCount) return undefined;
+        return buildAt(target);
+      };
+
+      const upstream = (
+        filter?: (r: Record<string, CellValue>) => boolean,
+      ): UpstreamRows => {
+        const result: UpstreamRows = {};
+        for (let j = 0; j < i; j++) {
+          const r = buildAt(j);
+          if (!filter || filter(r)) {
+            for (const [k, v] of Object.entries(r)) {
+              if (!(k in result)) result[k] = [];
+              result[k].push(v);
+            }
+          }
+        }
+        return result;
+      };
+
+      const meta: RowMeta = {
+        rowIndex: i,
+        rowCount,
+        defOffset,
+        colIndex: Object.keys(columns).length,
+        tableIndex: 0,
+        tableCount: 1,
+        get,
+        upstream,
+      };
+
+      column.push(fn(row, {}, meta));
     }
 
     columns[name] = column;
+    defOffset++;
   }
 
   return columns;

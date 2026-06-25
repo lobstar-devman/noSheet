@@ -1,12 +1,12 @@
 {
-  "name": "no-sheet",
+  "name": "nosheet",
   "version": "0.1.0",
   "description": "A programmatic computation engine library. Computations are defined in code — not as string expressions or spreadsheet-style formulas.",
   "types": "dist/index.d.ts",
   "main": "dist/index.js",
   "type": "module",
-  "module": "dist/noSheet.esm.js",
-  "browser": "dist/noSheet.umd.js",
+  "module": "dist/nosheet.esm.js",
+  "browser": "dist/nosheet.umd.js",
   "files": [
     "dist"
   ],
@@ -21,8 +21,9 @@
     "test:coverage": "jest --coverage",
     "clean": "rm -rf dist",
     "api-extractor": "api-extractor run --local --verbose",
+    "rollup": "rollup -c",
     "build": "rollup -c && api-extractor run --local --verbose",
-    "dev:watch": "rollup -c -w"
+    "dev:serve": "rollup -c -w"
   },
   "keywords": [
     "computation",
@@ -52,10 +53,12 @@
     "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-serve": "^3.0.0",
     "ts-jest": "^29.3.2",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.0"
   },
   "dependencies": {
+    "mathjs": "^15.2.0",
     "tslib": "^2.8.1"
   }
 }

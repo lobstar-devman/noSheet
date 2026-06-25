@@ -1,29 +1,52 @@
 # AGENTS.md
 
-Agent guidance for the `noSheetOnaLib` repository.
+Agent guidance for the `nosheet` repository.
 
 ## Repository Overview
 
-`noSheetOnaLib` is a TypeScript library for applying named expressions to tabular data.
+`nosheet` is a TypeScript library for applying named row expressions and aggregates to
+tabular data. Expressions are plain arrow functions, not string formulas — no parsing, no
+`eval`. Two API layers:
 
-Consumers define expressions as composable TypeScript values using `col()`, `scalar()`, and
-operator functions (`mul`, `add`, `sub`, `div`). Expressions are bound to result column names
-via `def()`, then applied row-by-row to a table with `applyDefinitions()`. Results are
-appended as new columns. Later definitions can reference columns produced by earlier ones —
-evaluation follows declaration order.
+- **Low-level (untyped)**: `def(name, fn)` binds an arrow-function expression to a result
+  column name; `applyDefinitions(table, definitions)` applies a list of them row-by-row to
+  a table, appending each result as a new column. Later definitions can reference columns
+  produced by earlier ones — evaluation follows declaration order. Cell values are typed as
+  the generic `CellValue` (`number | string | bigint | boolean | object`); callers cast as
+  needed.
+- **Typed (high-level)**: `Engine` is a chainable, fully-typed builder — `.def()` for row
+  expressions, `.agg()`/`.aggRow()` for aggregates. Each chained call returns a new `Engine`
+  whose row type has grown by one column, which is what gives IDE completion on
+  `row.<column>` and a compile error for forward references. `.bind()` produces a
+  `BoundEngine` for repeated re-evaluation against one table without re-validating.
+  `EngineGroup` aggregates and cross-references a set of `BoundEngine`s (e.g. summing
+  per-invoice totals into a grand total, or reading one invoice's data from another's
+  row expression). An optional `ExprCompiler` can be supplied to `Engine` for callers who
+  want string expressions (e.g. via mathjs) instead of arrow functions.
 
-No string parsing, no `eval`. Example matching SPEC.md:
+Example matching SPEC.md §3 (low-level layer):
 
 ```ts
 applyDefinitions(
   { cost: [3, 7, 8], quantity: [2, 3, 4] },
   [
-    def("net",   mul(col("cost"), col("quantity"))),  // net = cost * quantity
-    def("vat",   scalar(1.2)),                        // vat = 1.2 (constant per row)
-    def("total", mul(col("net"), col("vat"))),        // total = net * vat
+    def("net",   (row) => (row.cost as number) * (row.quantity as number)),
+    def("vat",   () => 1.2),
+    def("total", (row) => (row.net as number) * (row.vat as number)),
   ],
 );
 // Produces: { cost, quantity, net: [6,21,32], vat: [1.2,…], total: [7.2,25.2,38.4] }
+```
+
+Example matching SPEC.md §4 (typed layer — equivalent result, with IDE completion and
+forward-reference protection on `row.<column>`):
+
+```ts
+new Engine<{ cost: number[]; quantity: number[] }>()
+  .def("net",   (row) => row.cost * row.quantity)
+  .def("vat",   () => 1.2)
+  .def("total", (row) => row.net * row.vat)
+  .evaluate(["cost", "quantity"], [[3, 2], [7, 3], [8, 4]]);
 ```
 
 ## In-Depth Specification

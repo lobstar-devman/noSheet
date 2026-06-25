@@ -22,7 +22,7 @@ export type Definition = {
  * def("label",  (row: Row) => String(row.cost))         // string column
  * def("active", (row: Row) => row.quantity > 2)         // boolean column
  * ```
- * 
+ *
  * @beta
  */
 export function def(name: string, fn: ExprFn): Definition {
