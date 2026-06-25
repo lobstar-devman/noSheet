@@ -3,7 +3,7 @@
 //
 // See https://aka.ms/devcontainer.json for more information.
 {
-	"name": "Ona",
+	"name": "noSheet",
 	// This universal image (~10GB) includes many development tools and languages,
 	// providing a convenient all-in-one development environment.
 	//
