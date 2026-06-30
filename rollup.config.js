@@ -3,6 +3,7 @@
 import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import typescript from '@rollup/plugin-typescript';
+import copy from 'rollup-plugin-copy';
 
 import postcss from 'rollup-plugin-postcss';         // Allows importing and bundling CSS (and preprocessors like SCSS)
 import serve from 'rollup-plugin-serve';             // Starts a local dev server
@@ -53,7 +54,12 @@ export default [
         input: 'examples/invoice-engine.ts',
         external: ['mathjs'],
         plugins: [
-            typescript({ tsconfig: './tsconfig.examples.json' })
+            typescript({ tsconfig: './tsconfig.examples.json' }),
+			copy({
+				targets: [
+					{ src: 'dist/nosheet.esm.js', dest: 'examples/js' },			
+				]
+			})
         ],
         output: {
             file: 'examples/js/invoice-engine.js',
@@ -61,11 +67,14 @@ export default [
             paths: { 'mathjs': 'https://cdn.jsdelivr.net/npm/mathjs@14.8.1/+esm' }
         }
     },
-    ...(isDev ? [                      // Development-only plugins (enabled when in dev mode)
+    ...(isDev ? [                      		// Development-only plugins (enabled when in dev mode)
       serve({
-        open: true,                    // Automatically open the browser when the server starts
+        open: true,                    		// Automatically open the browser when the server starts
         contentBase: ['dist', 'examples'],  // Folders to serve static files from
-        port: 8181                     // Port to run the dev server on
+        port: 8181,                     	// Port to run the dev server on
+		headers: {							// Set headers
+			'ROLLUP-SERVE': 'true'
+		},		
       }),
       livereload(['dist', 'examples']) // Watch the 'dist' and 'examples' directories and reload browser on changes
     ] : [])	

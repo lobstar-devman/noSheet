@@ -76,9 +76,9 @@
 <article>
 
   <h1>Stress Test</h1><p><em>June 11, 2025</em></p>
-  <div>
+  <div x-data="{rows:1000, columns:100, samples:1000}">
     
-        <article x-data="{rows:1000, columns:100, samples:1000}">
+        <article>
             <form>
                 <fieldset>
                     <div class="parent">
@@ -107,7 +107,7 @@
         </article>
 
         <article>
-            <h3>Performance Histogram</h3>
+            <h3>Performance Histogram: <span x-text="formatter.format(columns*rows)"></span>&nbsp;calculations</h3>
             <div id="chart_div"></div>
         </article>
 <!--
@@ -125,9 +125,12 @@
 <script src="js/simple_alpine_table.js"></script>
 <script src="js/prism.js" data-manual></script>
 <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-
+<script>
+const formatter = new Intl.NumberFormat();
+</script>
 <script type="module">
-import {Engine} from "./nosheet.esm.js"
+import {Engine} from "./js/nosheet.esm.js"
+
     //
     //Plumb in Alpine
     //
@@ -249,7 +252,7 @@ import {Engine} from "./nosheet.esm.js"
 </main>
 
   <footer>
-    <p>&copy; 2025 LOBSTAR.</p>
+    <p>&copy; 2026 LOBSTAR.</p>
   </footer>
 
 </body>
