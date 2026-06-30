@@ -25,13 +25,13 @@ new Engine<{ cost: number[]; qty: number[] }>()
 // [ 5, 4, 20, 18,  20/115]
 ```
 
-## Why Does It noSheet Exist?
+## Why Does noSheet Exist?
 
-Calculations done in the front-end on so many websites are part of the domain layer and yet they exist mostly as javascript expressions in the GUI layer.
+Calculations done in the front-end on so many websites are part of the domain layer and yet they exist mostly as Javascript expressions in the GUI layer.
 
 They can, of course, be modelled as Spreadsheet formulas and implemented in one of the many Js spreadsheet libraries available - but this can create future issues when the sheet becomes larger and difficult to understand, requiring continual translation between Excel formulas and domain logic.
 
-noSheet attempts to fix this by lifting domain layer calculations out of the GUI into a seperate library of files that can be used in the front-end as well as the back end, in a more expressive typesafe way.
+noSheet attempts to fix this by lifting domain layer calculations out of the GUI into a separate library of files that can be used in the front-end as well as the back end, in a more expressive type-safe way.
 
 ### Who is it for?
 
