@@ -1,5 +1,7 @@
 # nosheet
 
+🌐[Github Page](https://lobstar-devman.github.io/noSheet/)
+
 A programmatic computation engine for tabular data. Define named expressions
 and aggregates in code — not as spreadsheet formulas or string DSLs — and apply
 them to 2-D tables with full TypeScript type safety.
@@ -23,6 +25,22 @@ new Engine<{ cost: number[]; qty: number[] }>()
 // [ 5, 4, 20, 18,  20/115]
 ```
 
+## Why Does It noSheet Exist?
+
+Calculations done in the front-end on so many websites are part of the domain layer and yet they exist mostly as javascript expressions in the GUI layer.
+
+They can, of course, be modelled as Spreadsheet formulas and implemented in one of the many Js spreadsheet libraries available - but this can create future issues when the sheet becomes larger and difficult to understand, requiring continual translation between Excel formulas and domain logic.
+
+noSheet attempts to fix this by lifting domain layer calculations out of the GUI into a seperate library of files that can be used in the front-end as well as the back end, in a more expressive typesafe way.
+
+### Who is it for?
+
+Front-end JavaScript and Back-end Node.js developers who need to implement complex calculations and who are starting to hit problems with existing 'Excel' spreadsheet engines [see 'Why spreadsheets are bad for programmers'](#13-why-spreadsheets-are-bad-for-programmers).
+
+### Who is it not for?
+
+Anyone who needs a spreadsheet UI/UX or who wants to parse, import, export or execute Excel formulas.
+
 ---
 
 ## Contents
@@ -38,7 +56,13 @@ new Engine<{ cost: number[]; qty: number[] }>()
 9. [External numeric types](#9-external-numeric-types)
 10. [Type parameter reference](#10-type-parameter-reference)
 11. [Low-level API — `applyDefinitions`](#11-low-level-api----applydefinitions)
-12. [Invoice example — end to end](#12-invoice-example----end-to-end)
+12. [Invoice example — end to end](#12-invoice-example----end-to-end) 
+13. [Why spreadsheets are bad for programmers](#13-why-spreadsheets-are-bad-for-programmers) 
+
+## 🌐 Online Examples
+
+1. [Invoice example](https://lobstar-devman.github.io/noSheet/examples/invoices.html)
+13. [Stress Test](https://lobstar-devman.github.io/noSheet/examples)
 
 ---
 
@@ -636,6 +660,8 @@ The trade-offs versus `Engine`:
 A complete worked example showing per-invoice engines, a cross-invoice analytics
 engine, and a reactive Alpine.js UI.
 
+[🌐 Go to online example ](https://lobstar-devman.github.io/noSheet/examples/invoices.html)
+
 ### Engine definitions (`invoice-engine.ts`)
 
 ```ts
@@ -746,4 +772,126 @@ Weight: <span x-text="pct(invoice.aggs.invoice_weighted_margin)"></span>
 <!-- Grand totals table -->
 <td x-text="currency(groupAggs.grand_cost)"></td>
 <td x-text="pct(groupAggs.grand_margin)"></td>
+```
+
+---
+
+## 13 Why spreadsheets are bad for programmers
+
+Lets consider a fairly basic table like the one below. It might be from an invoice or quote; each line item has a **cost** and a **quantity** which are multiplied to give a **total**. The **quantity** and **total** columns are also totaled and finally the average unit cost of each line item is calculated (for no good reason other than to use an Excel function other than `SUM`)
+
+| item  | quantity | cost |  total |
+|:------|:--------:|-----:|------:|
+| Apple |    10    |  5   |  50   |
+| Peach |    20    |  12  |  240  |
+| Mango |    30    |  7   |  210  |
+| Total |    50    |      |  500  |
+|       |          |x̄ cost: 8|      |
+
+This could be implemented in a spreadsheet as :
+
+|  |   A   |     B     |   C  |   D   |
+|:-|:----- |:--------: | ----:| -----:|
+|1 | **item**  | **quantity**  | **cost** | **total** |
+|2 | Apple |    10     |  5   | =B2*C2|
+|3 | Peach |    20     |  12  | =B3*C3|
+|4 | Mango |    30     |  7   | =B4*C4|
+|5 | Total |=SUM(B2:B4)|      | =SUM(D2:D4)|
+|6 |       |           |      |       | 
+|7 |       |           |  =AVERAGE(C2:C4)| | 
+
+Transposing this to a JavsScript spreadsheet, it might look something like this:
+
+```javascript
+const my_spreadsheet = [
+    ['Apple', 10, 5, '=B2*C2'],
+    ['Peach', 20, 12,'=B3*C3'],
+    ['Mango', 30, 7, '=B4*C4'],
+    [,'=SUM(B2:B4)',,'=SUM(D2:D4)'],
+    [,,'=AVERAGE(C2:C4)']
+];
+
+const worksheet = SpreadsheetLibrary.create(my_spreadsheet);
+```
+
+Looks nice and simple doesn't it? 
+
+But let's consider what happens when we need to insert a row for another fruit, a **Kiwi**.
+
+Whatever we do we will have to at least change the formulas for cells B5, D5 and C7 which will become cells B6, D6 and C8.
+If we want Kiwis to be at the top of our list then we will have to change the formula in every cell.
+
+When we do this in Excel or Google Sheets the UI automatically handles the formula adjustments for us during row insertion and it all seems effortless.
+
+But what if this is all in JavaScript? You now have to write code to adjust all the spreadsheet formulas on the fly depending on where the new row is inserted so that it looks like this (assuming that we added the new **Kiwi** row to the top of our spreadsheet).
+
+```javascript
+const my_spreadsheet = [
+    ['Kiwi',  13, 7, '=B2*C2'],
+    ['Apple', 10, 5, '=B3*C3'],
+    ['Peach', 20, 12,'=B4*C4'],
+    ['Mango', 30, 7, '=B5*C5'],
+    [,'=SUM(B2:B5)',,'=SUM(D2:D5)'],
+    [,,'=AVERAGE(C2:C5)']
+];
+```
+
+You have essentially swapped one programming problem for another; *how to manage complex dependent calculations easily* **with** *how to manage complex formulas containing interdependent 2D array indicies easily*.
+
+Our simple invoice logic presented as a spreadsheet is now strangely harder to read. Expressed in JavaScript we have lost column definitions so we now have to infer what the data represents; *is column B or C quantity or is it price?*
+
+We now have a trail of cell references that we have to interperate every time we return to our spreadsheet. So, if in six months time, you return to your 33 column javascript spreadsheet (because a customer has reported a bug) and see :
+
+```javascript
+const my_very_large_spreadsheet = [
+[ /* 30 previous columns omitted*/, '=IF(B1=3,(AB1/C1)*(N1/H1+D1),(AD1+A1+B1)-AVERAGE(G1:G100))', ...],
+];
+```
+
+I'm sure you'll rub your hands with glee and jump right in!
+
+Surely there must be a better way to do this I hear you say?
+
+### noSheet, there is!
+
+Lets rehash our simple example in noSheet terms:
+
+```javascript
+type fruitShape = {
+  fruit: string[];
+  cost:  number[];
+  qty:   number[];
+};
+
+const fruits = [
+    ['Apple', 10, 5],
+    ['Peach', 20, 12],
+    ['Mango', 30, 7],
+];
+
+export const fruitCalcs = new Engine<fruitShape>()
+                /**
+                 * Calculate the total cost of each row
+                 */
+              .def("total",     row => row.cost * row.qty)
+
+                /**
+                 * Calculate the total cost of all the rows in the table
+                 */
+              .agg("grand_total",     cols => sum(cols.total))
+
+              /**
+               * Calculate the average cost of all the row costs
+               */ 
+              .agg("average_cost",   cols => average(cols.cost));
+
+const aggregates = {},
+      calculator = engine.bind(['fruit', 'cost', 'qty'], fruits, aggregates);
+```
+
+Need to add another row and recalculate?
+
+```javascript
+fruits.push( [['Kiwi', 13, 7]] );
+calculator.evaluate();
 ```
