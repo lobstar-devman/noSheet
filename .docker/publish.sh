@@ -1,6 +1,9 @@
 #!/bin/bash
 # Check, build and publish nosheet to npm. Run via: docker compose -f .docker/compose.yaml run --rm publish
-# Extra arguments are passed to `npm publish`, e.g. `--dry-run` or `--otp=123456`.
+# Extra arguments are passed to `npm publish`, e.g. `--dry-run`.
+#
+# npm requires 2FA to publish. Don't pass `--otp=<code>`: the checks below outlast a ~30s
+# authenticator code. `npm publish` prompts for the code (or a security-key link) when it needs it.
 set -e
 
 cd "$(dirname "$0")"/..

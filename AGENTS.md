@@ -71,7 +71,9 @@ new Engine<{ cost: number[]; quantity: number[] }>()
     http://localhost:8181.
   - `docker compose -f .docker/compose.yaml run --rm publish` — runs the `prepublishOnly`
     checks, then `npm login` (interactive) and `npm publish`. Extra arguments go to
-    `npm publish`; add `--dry-run` to skip login and publish nothing. Agents must not run
+    `npm publish`; add `--dry-run` to skip login and publish nothing. The npm account needs
+    2FA enabled; `npm publish` prompts for the code itself (don't pass `--otp`, it expires
+    before the checks finish). Agents must not run
     this without `--dry-run` — publishing is the user's call.
 
 ## Conventions
