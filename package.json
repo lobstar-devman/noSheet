@@ -39,7 +39,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "api-extractor": "api-extractor run --local --verbose",
     "rollup": "rollup -c",
     "build": "rollup -c && api-extractor run --local --verbose",

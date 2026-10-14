@@ -69,6 +69,10 @@ new Engine<{ cost: number[]; quantity: number[] }>()
     (writes `dist/` and `examples/js/` back to the host).
   - `docker compose -f .docker/compose.yaml up examples` — serves `examples/` on
     http://localhost:8181.
+  - `docker compose -f .docker/compose.yaml run --rm publish` — runs the `prepublishOnly`
+    checks, then `npm login` (interactive) and `npm publish`. Extra arguments go to
+    `npm publish`; add `--dry-run` to skip login and publish nothing. Agents must not run
+    this without `--dry-run` — publishing is the user's call.
 
 ## Conventions
 

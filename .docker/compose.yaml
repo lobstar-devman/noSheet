@@ -2,6 +2,8 @@
 #
 #   docker compose -f .docker/compose.yaml run --rm build    # install, lint, test, build
 #   docker compose -f .docker/compose.yaml up examples       # serve examples/ on http://localhost:8181
+#   docker compose -f .docker/compose.yaml run --rm publish  # check, build, npm login, npm publish
+#                                       ... run --rm publish --dry-run   # same, but publish nothing
 #
 # The repo is bind-mounted, so dist/ and examples/js/ are written straight back to the host.
 name: nosheet
@@ -18,6 +20,11 @@ services:
   build:
     <<: *node
     command: bash .docker/build.sh
+
+  publish:
+    <<: *node
+    # An entrypoint (not a command) so arguments after `run --rm publish` reach `npm publish`.
+    entrypoint: ["bash", ".docker/publish.sh"]
 
   examples:
     <<: *node
