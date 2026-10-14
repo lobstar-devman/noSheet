@@ -1,15 +1,35 @@
 {
   "name": "nosheet",
   "version": "0.1.0",
-  "description": "A programmatic computation engine library. Computations are defined in code — not as string expressions or spreadsheet-style formulas.",
-  "types": "dist/index.d.ts",
-  "main": "dist/index.js",
+  "description": "Apply named, fully-typed row expressions and aggregates to tabular data. Expressions are plain arrow functions — no string formulas, no parsing, no eval.",
   "type": "module",
-  "module": "dist/nosheet.esm.js",
-  "browser": "dist/nosheet.umd.js",
+  "main": "./dist/nosheet.cjs",
+  "module": "./dist/nosheet.esm.js",
+  "browser": "./dist/nosheet.umd.js",
+  "types": "./dist/nosheet.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/nosheet.d.ts",
+      "import": "./dist/nosheet.esm.js",
+      "require": "./dist/nosheet.cjs"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
-    "dist"
+    "dist/nosheet.*"
   ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lobstar-devman/noSheet.git"
+  },
+  "homepage": "https://github.com/lobstar-devman/noSheet#readme",
+  "bugs": {
+    "url": "https://github.com/lobstar-devman/noSheet/issues"
+  },
   "scripts": {
     "build:tsc": "tsc --project tsconfig.build.json",
     "typecheck": "tsc --noEmit",
@@ -23,18 +43,23 @@
     "api-extractor": "api-extractor run --local --verbose",
     "rollup": "rollup -c",
     "build": "rollup -c && api-extractor run --local --verbose",
-    "dev:serve": "rollup -c -w"
+    "dev:serve": "rollup -c -w",
+    "prepublishOnly": "npm run lint && npm test && npm run clean && npm run build"
   },
   "keywords": [
+    "table",
+    "tabular",
+    "dataframe",
+    "expression",
+    "aggregate",
+    "spreadsheet",
     "computation",
-    "engine",
-    "graph",
-    "DAG",
     "typescript"
   ],
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@microsoft/api-extractor": "^7.59.4",
     "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-terser": "^1.0.0",
@@ -47,6 +72,7 @@
     "eslint": "^9.25.0",
     "eslint-config-prettier": "^10.1.2",
     "jest": "^29.7.0",
+    "mathjs": "^15.2.0",
     "prettier": "^3.5.3",
     "rollup": "^4.60.3",
     "rollup-plugin-copy": "^3.5.0",
@@ -55,11 +81,8 @@
     "rollup-plugin-serve": "^3.0.0",
     "ts-jest": "^29.3.2",
     "ts-node": "^10.9.2",
+    "tslib": "^2.8.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.0"
-  },
-  "dependencies": {
-    "mathjs": "^15.2.0",
-    "tslib": "^2.8.1"
   }
 }

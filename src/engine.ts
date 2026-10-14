@@ -63,7 +63,7 @@ function wrapAggsAsArrays(
 ): Record<string, CellValue[]> {
   const result: Record<string, CellValue[]> = {};
   for (const [k, v] of Object.entries(aggs)) {
-    result[k] = Array.isArray(v) ? (v as CellValue[]) : [v as CellValue];
+    result[k] = Array.isArray(v) ? (v as CellValue[]) : [v];
   }
   return result;
 }
@@ -93,7 +93,7 @@ function makeAggMeta(
       const a = aggsArray[i];
       if (!filter || filter(a)) {
         for (const [k, v] of Object.entries(a)) {
-          const vals = Array.isArray(v) ? (v as CellValue[]) : [v as CellValue];
+          const vals = Array.isArray(v) ? (v as CellValue[]) : [v];
           result[k] = k in result ? result[k].concat(vals) : vals.slice();
         }
       }
@@ -118,7 +118,7 @@ function buildCollectedAggs(upstreams: BoundEngine[]): Record<string, CellValue[
   const collected: Record<string, CellValue[]> = {};
   for (const up of upstreams) {
     for (const [k, v] of Object.entries(up.aggs)) {
-      const vals = Array.isArray(v) ? (v as CellValue[]) : [v as CellValue];
+      const vals = Array.isArray(v) ? (v as CellValue[]) : [v];
       collected[k] = k in collected ? collected[k].concat(vals) : vals.slice();
     }
   }
@@ -151,7 +151,6 @@ function buildCollectedAggs(upstreams: BoundEngine[]): Record<string, CellValue[
  */
 export class Engine<
   Input extends Record<string, CellValue[]>,
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   InputAggs extends Record<string, CellValue | CellValue[]> = Record<never, never>,
   Val extends CellValue = CellValue,
   Cols extends { [K in keyof Input]: Input[K][number] } = TableToRow<Input>,
@@ -871,17 +870,17 @@ export class ChainedBoundEngine {
   readonly #steps: Step[];
   readonly #upstreams: BoundEngine[];
   readonly #cardinalsTarget: Record<string, CellValue>;
-  readonly #compiler: ExprCompiler<CellValue> | undefined;
 
+  // `_compiler` is unused: string expressions are already compiled into each step's `fn`
+  // by the time an `Engine` hands its steps over.
   constructor(
     steps: Step[],
     upstreams: BoundEngine[],
-    compiler?: ExprCompiler<CellValue>,
+    _compiler?: ExprCompiler,
     cardinalsTarget?: Record<string, CellValue>,
   ) {
     this.#steps = steps;
     this.#upstreams = upstreams;
-    this.#compiler = compiler;
     this.#cardinalsTarget = cardinalsTarget ?? {};
   }
 
@@ -905,7 +904,7 @@ export class ChainedBoundEngine {
     for (const up of this.#upstreams) up.resetGroupColumns();
 
     for (const key of Object.keys(this.#cardinalsTarget)) {
-      delete this.#cardinalsTarget[key];
+      Reflect.deleteProperty(this.#cardinalsTarget, key);
     }
 
     const tableCount = this.#upstreams.length;

@@ -60,7 +60,7 @@ describe("Engine.agg — scalar aggregate", () => {
 
     new Engine<{ x: number[] }>()
       .def("doubled", (row) => row.x * 2)
-      .agg("sumDoubled", (cols) => (cols.doubled as number[]).reduce((a, b) => a + b, 0))
+      .agg("sumDoubled", (cols) => cols.doubled.reduce((a, b) => a + b, 0))
       .def("share", (row, aggs) => row.doubled / aggs.sumDoubled)
       .evaluate(headers, rows);
 
@@ -97,7 +97,7 @@ describe("Engine.agg — scalar aggregate", () => {
     new Engine<{ x: number[] }>()
       .agg("sum", (cols) => cols.x.reduce((a, b) => a + b, 0))
       .agg("check", (_cols, _aggs, aggMeta) => {
-        seen = aggMeta.get(0) as Record<string, unknown>;
+        seen = aggMeta.get(0);
         return 0;
       })
       .evaluate(headers, rows);
@@ -144,7 +144,7 @@ describe("Engine — mixed def / agg chains", () => {
 
     new Engine<{ x: number[] }>()
       .def("squared", (row) => row.x ** 2)
-      .agg("sumSq", (cols) => (cols.squared as number[]).reduce((a, b) => a + b, 0))
+      .agg("sumSq", (cols) => cols.squared.reduce((a, b) => a + b, 0))
       .agg("meanSq", (_cols, aggs) => aggs.sumSq / 4)
       .def("deviation", (row, aggs) => row.squared - aggs.meanSq)
       .evaluate(headers, rows);

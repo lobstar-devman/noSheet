@@ -632,8 +632,8 @@ describe("RowMeta — intrinsic row/column metadata", () => {
     const { headers, rows } = toRows({ x: [1, 2] });
     new Engine<{ x: number[] }>()
       .def("a", (_row, _aggs, meta) => meta.defOffset)
-      .agg("total", (cols) => (cols.x as number[]).reduce((s, v) => s + v, 0))
-      .cardinal("mean", (cols) => (cols.x as number[]).reduce((s, v) => s + (v as number), 0) / cols.x.length)
+      .agg("total", (cols) => cols.x.reduce((s, v) => s + v, 0))
+      .cardinal("mean", (cols) => cols.x.reduce((s, v) => s + v, 0) / cols.x.length)
       .def("b", (_row, _aggs, meta) => meta.defOffset)
       .evaluate(headers, rows);
     expect(col(headers, rows, "a")).toEqual([0, 0]);
@@ -765,7 +765,7 @@ describe("Engine.cardinal() — single-table mode", () => {
 
     new Engine<{ x: number[] }>()
       .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
-      .cardinal("doubled_total", (cols, aggs) => (aggs.total as number[])[0] * 2)
+      .cardinal("doubled_total", (cols, aggs) => aggs.total[0] * 2)
       .evaluate(headers, rows);
 
     // No column added, just verify no error thrown
@@ -777,7 +777,7 @@ describe("Engine.cardinal() — single-table mode", () => {
     const rows: CellValue[][] = [[1], [2], [3]];
     const ctx = new Engine<{ x: number[] }>()
       .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
-      .cardinal("doubled_total", (_cols, aggs) => (aggs.total as number[])[0] * 2)
+      .cardinal("doubled_total", (_cols, aggs) => aggs.total[0] * 2)
       .bind(headers, rows);
 
     ctx.evaluate();
@@ -792,7 +792,7 @@ describe("Engine.cardinal() — single-table mode", () => {
 
     new Engine<{ x: number[] }>()
       .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
-      .cardinal("doubled_total", (_cols, aggs) => (aggs.total as number[])[0] * 2)
+      .cardinal("doubled_total", (_cols, aggs) => aggs.total[0] * 2)
       .def("share", (row, aggs) => row.x / aggs.total)
       .evaluate(headers, rows);
 
@@ -805,8 +805,8 @@ describe("Engine.cardinal() — single-table mode", () => {
     const rows: CellValue[][] = [[1], [2], [3]];
     const ctx = new Engine<{ x: number[] }>()
       .agg("total", (cols) => cols.x.reduce((a, b) => a + b, 0))
-      .cardinal("doubled", (_cols, aggs) => (aggs.total as number[])[0] * 2)
-      .cardinal("quadrupled", (_cols, _aggs, cards) => (cards.doubled as number) * 2)
+      .cardinal("doubled", (_cols, aggs) => aggs.total[0] * 2)
+      .cardinal("quadrupled", (_cols, _aggs, cards) => cards.doubled * 2)
       .bind(headers, rows);
 
     ctx.evaluate();
@@ -819,14 +819,14 @@ describe("Engine.cardinal() — single-table mode", () => {
 describe("ChainedBoundEngine — bindX() single-table chaining", () => {
   const invoiceEngine = new Engine<{ cost: number[]; qty: number[] }>()
     .def("line_cost", (r) => r.cost * r.qty)
-    .agg("total_cost", (cols) => (cols.line_cost as number[]).reduce((a, b) => a + b, 0));
+    .agg("total_cost", (cols) => cols.line_cost.reduce((a, b) => a + b, 0));
 
   it("cascade mode auto-evaluates upstream before running own steps", () => {
     const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
     // bound NOT evaluated yet
 
     const chained = new Engine<{ line_cost: number[]; cost: number[]; qty: number[] }>()
-      .def("doubled", (r) => (r.line_cost as number) * 2)
+      .def("doubled", (r) => r.line_cost * 2)
       .bindX(bound);
 
     chained.evaluate(); // cascade: evaluates bound first
@@ -840,7 +840,7 @@ describe("ChainedBoundEngine — bindX() single-table chaining", () => {
     bound.evaluate();
 
     const chained = new Engine<{ line_cost: number[]; cost: number[]; qty: number[] }>()
-      .agg("chain_total", (cols) => (cols.line_cost as number[]).reduce((a, b) => a + b, 0))
+      .agg("chain_total", (cols) => cols.line_cost.reduce((a, b) => a + b, 0))
       .bindX(bound);
 
     chained.evaluate("manual"); // does NOT re-evaluate bound
@@ -853,7 +853,7 @@ describe("ChainedBoundEngine — bindX() single-table chaining", () => {
   it("second evaluate is idempotent — does not double-append columns", () => {
     const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
     const chained = new Engine<{ line_cost: number[]; cost: number[]; qty: number[] }>()
-      .def("doubled", (r) => (r.line_cost as number) * 2)
+      .def("doubled", (r) => r.line_cost * 2)
       .bindX(bound);
 
     chained.evaluate();
@@ -886,7 +886,7 @@ describe("ChainedBoundEngine — bindX() single-table chaining", () => {
 describe("ChainedBoundEngine — bindX() multi-table", () => {
   const invoiceEngine = new Engine<{ cost: number[]; qty: number[] }>()
     .def("line_cost", (r) => r.cost * r.qty)
-    .agg("total_cost", (cols) => (cols.line_cost as number[]).reduce((a, b) => a + b, 0));
+    .agg("total_cost", (cols) => cols.line_cost.reduce((a, b) => a + b, 0));
 
   it("cardinal sums per-table scalar aggs across tables", () => {
     // inv1: total_cost = 10*2 + 20*3 = 80
@@ -917,7 +917,7 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
     inv2.evaluate();
 
     const chained = new Engine<{ cost: number[]; qty: number[] }>()
-      .agg("total_qty", (cols) => (cols.qty as number[]).reduce((a, b) => a + b, 0))
+      .agg("total_qty", (cols) => cols.qty.reduce((a, b) => a + b, 0))
       .bindX([inv1, inv2]);
 
     chained.evaluate("manual");
@@ -937,7 +937,7 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
       .cardinal("grand_cost", (_cols, aggs) =>
         (aggs.total_cost as number[]).reduce((a, b) => a + b, 0),
       )
-      .cardinal("grand_margin", (_cols, _aggs, cards) => (cards.grand_cost as number) * 0.1)
+      .cardinal("grand_margin", (_cols, _aggs, cards) => cards.grand_cost * 0.1)
       .bindX([inv1, inv2], cardinals);
 
     chained.evaluate("manual");
@@ -953,7 +953,7 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
     inv2.evaluate();
 
     const chained = new Engine<{ line_cost: number[] }>()
-      .def("doubled", (r) => (r.line_cost as number) * 2)
+      .def("doubled", (r) => r.line_cost * 2)
       .bindX([inv1, inv2]);
 
     chained.evaluate("manual");

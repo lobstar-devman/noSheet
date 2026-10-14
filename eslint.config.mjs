@@ -13,6 +13,10 @@ export default tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
     },
+    rules: {
+      // `_`-prefixed parameters are accepted for API compatibility but intentionally unused.
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+    },
   },
   {
     ignores: ["dist/", "coverage/", "jest.config.ts", "eslint.config.mjs", "rollup.config.js"],

@@ -81,7 +81,7 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
     new Engine<{ price: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>()
       .def("cost", (row) => costCompiled.evaluate(row) as BigNumber)
       .agg("totalCost", (cols) =>
-        (cols.cost).reduce((acc, v) => acc.add(v), bn(0)),
+        cols.cost.reduce((acc, v) => acc.add(v), bn(0)),
       )
       .def("share", (row, aggs) => row.cost.div(aggs.totalCost))
       .evaluate(headers, rows);
@@ -245,10 +245,10 @@ describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
     const cardinals: Record<string, BigNumber> = {};
     new Engine<{ cost: BigNumber[] }, Record<never, never>, BigNumber>(mathCompiler)
       .cardinal("grand_total", "sum(total_cost)")
-      .bindX([inv1, inv2], cardinals as Record<string, import("./expr.js").CellValue>)
+      .bindX([inv1, inv2], cardinals)
       .evaluate("manual");
 
-    expect((cardinals["grand_total"] as BigNumber).toNumber()).toBe(115);
+    expect(cardinals["grand_total"].toNumber()).toBe(115);
   });
 
   it(".agg() string expression runs per table over merged columns", () => {
