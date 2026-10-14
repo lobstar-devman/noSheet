@@ -6,8 +6,12 @@ import { Engine } from "./engine.js";
 // and return Decimal directly — no `as Decimal` casts required at the call sites.
 class Decimal {
   constructor(readonly value: number) {}
-  add(other: Decimal): Decimal { return new Decimal(this.value + other.value); }
-  mul(other: Decimal): Decimal { return new Decimal(this.value * other.value); }
+  add(other: Decimal): Decimal {
+    return new Decimal(this.value + other.value);
+  }
+  mul(other: Decimal): Decimal {
+    return new Decimal(this.value * other.value);
+  }
 }
 
 const d = (n: number) => new Decimal(n);
@@ -15,7 +19,10 @@ const d = (n: number) => new Decimal(n);
 describe("Engine — external library type (Decimal)", () => {
   it("row expression receives typed Decimal columns without casting", () => {
     const headers = ["price", "qty"];
-    const rows: Decimal[][] = [[d(10), d(3)], [d(20), d(2)]];
+    const rows: Decimal[][] = [
+      [d(10), d(3)],
+      [d(20), d(2)],
+    ];
 
     new Engine<{ price: Decimal[]; qty: Decimal[] }, Record<never, never>, Decimal>()
       .def("total", (row) => row.price.mul(row.qty))

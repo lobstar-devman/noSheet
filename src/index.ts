@@ -1,12 +1,5 @@
 export { Engine, BoundEngine, ChainedBoundEngine } from "./engine.js";
-export type {
-  TableToRow,
-  ExprCompiler,
-  DefStep,
-  AggStep,
-  CardinalStep,
-  Step,
-} from "./engine.js";
+export type { TableToRow, ExprCompiler, DefStep, AggStep, CardinalStep, Step } from "./engine.js";
 
 export type {
   CellValue,

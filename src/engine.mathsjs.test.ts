@@ -41,7 +41,11 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
       [bn(200), bn(15), bn(4)],
     ];
 
-    new Engine<{ base: BigNumber[]; rate: BigNumber[]; hours: BigNumber[] }, Record<never, never>, BigNumber>()
+    new Engine<
+      { base: BigNumber[]; rate: BigNumber[]; hours: BigNumber[] },
+      Record<never, never>,
+      BigNumber
+    >()
       .def("pay", (row) => compiled.evaluate(row) as BigNumber)
       .evaluate(headers, rows);
 
@@ -80,9 +84,7 @@ describe("Engine — mathjs BigNumber with precompiled expressions", () => {
 
     new Engine<{ price: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>()
       .def("cost", (row) => costCompiled.evaluate(row) as BigNumber)
-      .agg("totalCost", (cols) =>
-        cols.cost.reduce((acc, v) => acc.add(v), bn(0)),
-      )
+      .agg("totalCost", (cols) => cols.cost.reduce((acc, v) => acc.add(v), bn(0)))
       .def("share", (row, aggs) => row.cost.div(aggs.totalCost))
       .evaluate(headers, rows);
 
@@ -130,7 +132,9 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
       [bn(5), bn(6)],
     ];
 
-    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>(mathCompiler)
+    new Engine<{ price: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>(
+      mathCompiler,
+    )
       .def("cost", "price * qty")
       .agg("totalCost", "sum(cost)")
       .def("share", "cost / totalCost")
@@ -152,7 +156,8 @@ describe("Engine — expression strings with mathjs ExprCompiler", () => {
   it("compiler outer function is called once per expression, not once per row", () => {
     const outerSpy: ExprCompiler<BigNumber> = jest.fn((expression: string) => {
       const compiled = math.compile(expression);
-      return (scope: Record<string, unknown>) => compiled.evaluate(scope) as BigNumber | BigNumber[];
+      return (scope: Record<string, unknown>) =>
+        compiled.evaluate(scope) as BigNumber | BigNumber[];
     });
 
     const headers = ["x"];
@@ -217,7 +222,13 @@ describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
     .agg("total_cost", "sum(line_cost)");
 
   it(".def() string expression appends a column to every upstream table", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)], [bn(20), bn(3)]]);
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [bn(10), bn(2)],
+        [bn(20), bn(3)],
+      ],
+    );
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[bn(5), bn(4)]]);
     inv1.evaluate();
     inv2.evaluate();
@@ -228,17 +239,29 @@ describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
       .evaluate("manual");
 
     const dc1 = inv1.cols["doubled_cost"] as BigNumber[];
-    expect(dc1[0].toNumber()).toBe(40);  // 10*2*2
+    expect(dc1[0].toNumber()).toBe(40); // 10*2*2
     expect(dc1[1].toNumber()).toBe(120); // 20*3*2
     const dc2 = inv2.cols["doubled_cost"] as BigNumber[];
-    expect(dc2[0].toNumber()).toBe(40);  // 5*4*2
+    expect(dc2[0].toNumber()).toBe(40); // 5*4*2
   });
 
   it(".cardinal() string expression computes grand total across all tables", () => {
     // inv1: line_cost=[20,60], total_cost=80
     // inv2: line_cost=[20,15], total_cost=35
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)], [bn(20), bn(3)]]);
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[bn(5), bn(4)], [bn(15), bn(1)]]);
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [bn(10), bn(2)],
+        [bn(20), bn(3)],
+      ],
+    );
+    const inv2 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [bn(5), bn(4)],
+        [bn(15), bn(1)],
+      ],
+    );
     inv1.evaluate();
     inv2.evaluate();
 
@@ -252,12 +275,26 @@ describe("ChainedBoundEngine — mathjs string expressions via bindX", () => {
   });
 
   it(".agg() string expression runs per table over merged columns", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[bn(10), bn(2)], [bn(20), bn(3)]]);
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[bn(5), bn(4)], [bn(15), bn(1)]]);
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [bn(10), bn(2)],
+        [bn(20), bn(3)],
+      ],
+    );
+    const inv2 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [bn(5), bn(4)],
+        [bn(15), bn(1)],
+      ],
+    );
     inv1.evaluate();
     inv2.evaluate();
 
-    new Engine<{ cost: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>(mathCompiler)
+    new Engine<{ cost: BigNumber[]; qty: BigNumber[] }, Record<never, never>, BigNumber>(
+      mathCompiler,
+    )
       .agg("total_qty", "sum(qty)")
       .bindX([inv1, inv2])
       .evaluate("manual");

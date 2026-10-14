@@ -263,11 +263,7 @@ describe("Engine.evaluate — headerless object-row overload", () => {
   });
 
   it("agg works using object keys as column names", () => {
-    const rows = [
-      { amount: 10 },
-      { amount: 20 },
-      { amount: 30 },
-    ];
+    const rows = [{ amount: 10 }, { amount: 20 }, { amount: 30 }];
 
     new Engine<{ amount: number[] }>()
       .agg("total", (cols) => cols.amount.reduce((a, b) => a + b, 0))
@@ -295,9 +291,7 @@ describe("Engine.evaluate — headerless object-row overload", () => {
   it("throws when a def name already exists as a key on the row objects", () => {
     const rows = [{ cost: 5, qty: 2 }];
     expect(() => {
-      new Engine<{ cost: number[]; qty: number[] }>()
-        .def("cost", (row) => row.qty)
-        .evaluate(rows);
+      new Engine<{ cost: number[]; qty: number[] }>().def("cost", (row) => row.qty).evaluate(rows);
     }).toThrow('Column "cost" already exists');
   });
 });
@@ -364,8 +358,7 @@ describe("BoundEngine — Engine.bind()", () => {
   it("throws at bind time when a row length mismatches headers", () => {
     const headers = ["a", "b"];
     expect(() => {
-      new Engine<{ a: number[]; b: number[] }>()
-        .bind(headers, [[1, 2], [3]]);
+      new Engine<{ a: number[]; b: number[] }>().bind(headers, [[1, 2], [3]]);
     }).toThrow("does not match headers length");
   });
 
@@ -373,9 +366,7 @@ describe("BoundEngine — Engine.bind()", () => {
     const headers = ["cost"];
     const rows: CellValue[][] = [[5]];
     expect(() => {
-      new Engine<{ cost: number[] }>()
-        .def("cost", () => 0)
-        .bind(headers, rows);
+      new Engine<{ cost: number[] }>().def("cost", () => 0).bind(headers, rows);
     }).toThrow('Column "cost" already exists');
   });
 
@@ -415,8 +406,9 @@ describe("BoundEngine — Engine.bind()", () => {
   });
 
   it("bind() with external aggs object writes results into it", () => {
-    const engine = new Engine<{ v: number[] }>()
-      .agg("total", (cols) => cols.v.reduce((a, b) => a + b, 0));
+    const engine = new Engine<{ v: number[] }>().agg("total", (cols) =>
+      cols.v.reduce((a, b) => a + b, 0),
+    );
 
     const aggs1: Record<string, CellValue | CellValue[]> = {};
     const aggs2: Record<string, CellValue | CellValue[]> = {};
@@ -491,7 +483,10 @@ describe("meta.get() — filter access", () => {
   it("get(filter) returns the first row matching the predicate", () => {
     const { headers, rows } = toRows({ id: [1, 2, 3], val: [10, 20, 30] });
     new Engine<{ id: number[]; val: number[] }>()
-      .def("found", (_row, _aggs, meta) => (meta.get((r) => r["id"] === 2)?.["val"] ?? -1) as number)
+      .def(
+        "found",
+        (_row, _aggs, meta) => (meta.get((r) => r["id"] === 2)?.["val"] ?? -1) as number,
+      )
       .evaluate(headers, rows);
     expect(col(headers, rows, "found")).toEqual([20, 20, 20]);
   });
@@ -516,7 +511,11 @@ describe("meta.get() — object-row path", () => {
   });
 
   it("get(filter) works in headerless object path", () => {
-    const rows = [{ id: 1, v: 10 }, { id: 2, v: 20 }, { id: 3, v: 30 }];
+    const rows = [
+      { id: 1, v: 10 },
+      { id: 2, v: 20 },
+      { id: 3, v: 30 },
+    ];
     new Engine<{ id: number[]; v: number[] }>()
       .def("ref", (_row, _aggs, meta) => (meta.get((r) => r["id"] === 2)?.["v"] ?? -1) as number)
       .evaluate(rows);
@@ -671,9 +670,7 @@ describe("RowMeta — intrinsic row/column metadata", () => {
 
   it("works in the headerless object-row path", () => {
     const rows = [{ x: 1 }, { x: 2 }, { x: 3 }];
-    new Engine<{ x: number[] }>()
-      .def("idx", (_row, _aggs, meta) => meta.rowIndex)
-      .evaluate(rows);
+    new Engine<{ x: number[] }>().def("idx", (_row, _aggs, meta) => meta.rowIndex).evaluate(rows);
     const asMap = rows as Array<Record<string, number>>;
     expect(asMap.map((r) => r["idx"])).toEqual([0, 1, 2]);
   });
@@ -822,7 +819,13 @@ describe("ChainedBoundEngine — bindX() single-table chaining", () => {
     .agg("total_cost", (cols) => cols.line_cost.reduce((a, b) => a + b, 0));
 
   it("cascade mode auto-evaluates upstream before running own steps", () => {
-    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const bound = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    );
     // bound NOT evaluated yet
 
     const chained = new Engine<{ line_cost: number[]; cost: number[]; qty: number[] }>()
@@ -836,7 +839,13 @@ describe("ChainedBoundEngine — bindX() single-table chaining", () => {
   });
 
   it("manual mode skips upstream evaluate", () => {
-    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [5, 4]]);
+    const bound = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [5, 4],
+      ],
+    );
     bound.evaluate();
 
     const chained = new Engine<{ line_cost: number[]; cost: number[]; qty: number[] }>()
@@ -851,7 +860,13 @@ describe("ChainedBoundEngine — bindX() single-table chaining", () => {
   });
 
   it("second evaluate is idempotent — does not double-append columns", () => {
-    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const bound = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    );
     const chained = new Engine<{ line_cost: number[]; cost: number[]; qty: number[] }>()
       .def("doubled", (r) => r.line_cost * 2)
       .bindX(bound);
@@ -863,17 +878,28 @@ describe("ChainedBoundEngine — bindX() single-table chaining", () => {
   });
 
   it("rowCount reflects the upstream's row count", () => {
-    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3], [5, 1]]);
+    const bound = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+        [5, 1],
+      ],
+    );
     const chained = new Engine<{ cost: number[] }>().bindX(bound);
     chained.evaluate();
     expect(chained.rowCount).toBe(3);
   });
 
   it("cols returns the upstream's columns (including chained def columns)", () => {
-    const bound = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
-    const chained = new Engine<{ line_cost: number[] }>()
-      .def("tag", () => 1)
-      .bindX(bound);
+    const bound = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    );
+    const chained = new Engine<{ line_cost: number[] }>().def("tag", () => 1).bindX(bound);
     chained.evaluate();
 
     const c = chained.cols;
@@ -891,8 +917,20 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
   it("cardinal sums per-table scalar aggs across tables", () => {
     // inv1: total_cost = 10*2 + 20*3 = 80
     // inv2: total_cost = 5*4 + 15*1 = 35
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]);
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    );
+    const inv2 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [5, 4],
+        [15, 1],
+      ],
+    );
     inv1.evaluate();
     inv2.evaluate();
 
@@ -911,7 +949,13 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
   });
 
   it("agg step runs per table and writes result to each upstream.aggs", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    );
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
     inv1.evaluate();
     inv2.evaluate();
@@ -922,13 +966,25 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
 
     chained.evaluate("manual");
 
-    expect(inv1.aggs["total_qty"]).toBe(5);  // 2 + 3
-    expect(inv2.aggs["total_qty"]).toBe(4);  // 4
+    expect(inv1.aggs["total_qty"]).toBe(5); // 2 + 3
+    expect(inv2.aggs["total_qty"]).toBe(4); // 4
   });
 
   it("later cardinal can reference earlier cardinal via cards parameter", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost = 80
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]); // total_cost = 35
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    ); // total_cost = 80
+    const inv2 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [5, 4],
+        [15, 1],
+      ],
+    ); // total_cost = 35
     inv1.evaluate();
     inv2.evaluate();
 
@@ -947,7 +1003,13 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
   });
 
   it("def appends columns to every upstream table", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    );
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
     inv1.evaluate();
     inv2.evaluate();
@@ -982,7 +1044,13 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
   });
 
   it("cols getter returns merged columns from all upstreams", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    );
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
     inv1.evaluate();
     inv2.evaluate();
@@ -995,7 +1063,13 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
   });
 
   it("rowCount is total rows across all upstreams", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    );
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
     inv1.evaluate();
     inv2.evaluate();
@@ -1007,7 +1081,13 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
   });
 
   it("cascade evaluate auto-evaluates all upstreams", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]);
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    );
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]);
     // Do NOT call evaluate on upstreams manually
 
@@ -1031,9 +1111,7 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
     inv1.evaluate();
     inv2.evaluate();
 
-    const chained = new Engine<{ line_cost: number[] }>()
-      .def("tag", () => 1)
-      .bindX([inv1, inv2]);
+    const chained = new Engine<{ line_cost: number[] }>().def("tag", () => 1).bindX([inv1, inv2]);
 
     chained.evaluate("manual");
     chained.evaluate("manual");
@@ -1045,8 +1123,20 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
   it("later agg sees cardinal written to upstream.aggs", () => {
     // cardinal writes its result to all upstream.aggs;
     // a subsequent .agg() step should see it via aggs parameter
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost=80
-    const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4], [15, 1]]); // total_cost=35
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    ); // total_cost=80
+    const inv2 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [5, 4],
+        [15, 1],
+      ],
+    ); // total_cost=35
     inv1.evaluate();
     inv2.evaluate();
 
@@ -1085,7 +1175,13 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
   });
 
   it("aggMeta.get(0) returns current table's aggs, get(-1) returns previous table's aggs", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost=80
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    ); // total_cost=80
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]); // total_cost=20
     inv1.evaluate();
     inv2.evaluate();
@@ -1104,7 +1200,13 @@ describe("ChainedBoundEngine — bindX() multi-table", () => {
   });
 
   it("aggMeta.upstream() returns prior tables' aggs as arrays", () => {
-    const inv1 = invoiceEngine.bind(["cost", "qty"], [[10, 2], [20, 3]]); // total_cost=80
+    const inv1 = invoiceEngine.bind(
+      ["cost", "qty"],
+      [
+        [10, 2],
+        [20, 3],
+      ],
+    ); // total_cost=80
     const inv2 = invoiceEngine.bind(["cost", "qty"], [[5, 4]]); // total_cost=20
     const inv3 = invoiceEngine.bind(["cost", "qty"], [[15, 1]]); // total_cost=15
     inv1.evaluate();

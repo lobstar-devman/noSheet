@@ -58,9 +58,7 @@ export type UpstreamAggs = Record<string, CellValue[]>;
  * @beta
  */
 export type AggMetaGet = (
-  indexOrFilter:
-    | number
-    | ((aggs: Record<string, CellValue | CellValue[]>) => boolean),
+  indexOrFilter: number | ((aggs: Record<string, CellValue | CellValue[]>) => boolean),
 ) => Record<string, CellValue | CellValue[]> | undefined;
 
 /**
@@ -103,9 +101,7 @@ export type AggMeta = {
   tableIndex: number;
   tableCount: number;
   get: AggMetaGet;
-  upstream: (
-    filter?: (aggs: Record<string, CellValue | CellValue[]>) => boolean,
-  ) => UpstreamAggs;
+  upstream: (filter?: (aggs: Record<string, CellValue | CellValue[]>) => boolean) => UpstreamAggs;
 };
 
 /**
