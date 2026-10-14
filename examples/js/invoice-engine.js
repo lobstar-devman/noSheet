@@ -677,11 +677,11 @@ class ChainedBoundEngine {
     #steps;
     #upstreams;
     #cardinalsTarget;
-    #compiler;
-    constructor(steps, upstreams, compiler, cardinalsTarget) {
+    // `_compiler` is unused: string expressions are already compiled into each step's `fn`
+    // by the time an `Engine` hands its steps over.
+    constructor(steps, upstreams, _compiler, cardinalsTarget) {
         this.#steps = steps;
         this.#upstreams = upstreams;
-        this.#compiler = compiler;
         this.#cardinalsTarget = cardinalsTarget ?? {};
     }
     get aggs() {
@@ -701,7 +701,7 @@ class ChainedBoundEngine {
         for (const up of this.#upstreams)
             up.resetGroupColumns();
         for (const key of Object.keys(this.#cardinalsTarget)) {
-            delete this.#cardinalsTarget[key];
+            Reflect.deleteProperty(this.#cardinalsTarget, key);
         }
         const tableCount = this.#upstreams.length;
         const cards = {};

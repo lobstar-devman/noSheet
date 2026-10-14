@@ -66,7 +66,10 @@ void new Engine<{ x: number[] }>().def(
 
 void new Engine<{ x: number[] }>().def(
   "r",
-  (_row, _aggs, meta) => (meta.upstream()["x"]?.length ?? 0) as number,
+  (_row, _aggs, meta) => {
+    const up = meta.upstream();
+    return "x" in up ? up["x"].length : 0;
+  },
 );
 
 // Jest requires at least one test block per file.

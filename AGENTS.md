@@ -63,6 +63,12 @@ new Engine<{ cost: number[]; quantity: number[] }>()
 
 - **Image**: `mcr.microsoft.com/devcontainers/javascript-node:24`
 - Switched from the universal image to keep startup fast.
+- `.docker/compose.yaml` uses the same image for containerised builds; `node_modules` lives in a
+  named volume so it never overwrites the host's:
+  - `docker compose -f .docker/compose.yaml run --rm build` — `npm ci`, lint, test, build
+    (writes `dist/` and `examples/js/` back to the host).
+  - `docker compose -f .docker/compose.yaml up examples` — serves `examples/` on
+    http://localhost:8181.
 
 ## Conventions
 

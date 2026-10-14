@@ -21,6 +21,8 @@ export type CellValue = number | string | bigint | boolean | object;
  */
 export type RowGet = {
   (offset: number): Record<string, CellValue> | undefined;
+  // Kept as two overloads (not a union) so each mode is documented separately — see SPEC.md §2.2.
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
   (filter: (row: Record<string, CellValue>) => boolean): Record<string, CellValue> | undefined;
 };
 

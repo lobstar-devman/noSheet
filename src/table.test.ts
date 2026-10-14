@@ -97,7 +97,7 @@ describe("applyDefinitions — sequential ordering", () => {
 describe("applyDefinitions — non-number column types", () => {
   it("string column", () => {
     const result = applyDefinitions({ cost: [3, 7, 8] }, [
-      def("label", (row: Row) => `cost:${String(row.cost)}`),
+      def("label", (row: Row) => `cost:${(row.cost as number).toString()}`),
     ]);
     expect(result["label"]).toEqual(["cost:3", "cost:7", "cost:8"]);
   });
