@@ -60,9 +60,7 @@ export function applyDefinitions(table: Table, definitions: readonly Definition[
         return buildAt(target);
       };
 
-      const upstream = (
-        filter?: (r: Record<string, CellValue>) => boolean,
-      ): UpstreamRows => {
+      const upstream = (filter?: (r: Record<string, CellValue>) => boolean): UpstreamRows => {
         const result: UpstreamRows = {};
         for (let j = 0; j < i; j++) {
           const r = buildAt(j);

@@ -47,12 +47,10 @@ void (() => {
 
 // ── row is pure data — row.get must not exist ────────────────────────────────
 
-void new Engine<{ x: number[] }>().def(
-  "r",
-  (row) =>
-    // @ts-expect-error: Property 'get' does not exist on Row — moved to meta (hard breaking change)
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
-    row.get(-1),
+void new Engine<{ x: number[] }>().def("r", (row) =>
+  // @ts-expect-error: Property 'get' does not exist on Row — moved to meta (hard breaking change)
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+  row.get(-1),
 );
 
 // ── meta.get IS available and correctly typed ─────────────────────────────────
@@ -64,13 +62,10 @@ void new Engine<{ x: number[] }>().def(
 
 // ── meta.upstream IS available and returns UpstreamRows ──────────────────────
 
-void new Engine<{ x: number[] }>().def(
-  "r",
-  (_row, _aggs, meta) => {
-    const up = meta.upstream();
-    return "x" in up ? up["x"].length : 0;
-  },
-);
+void new Engine<{ x: number[] }>().def("r", (_row, _aggs, meta) => {
+  const up = meta.upstream();
+  return "x" in up ? up["x"].length : 0;
+});
 
 // Jest requires at least one test block per file.
 it("compile-time type constraints are enforced (see @ts-expect-error directives above)", () => {

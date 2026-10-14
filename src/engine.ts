@@ -10,7 +10,17 @@ import type {
   UpstreamAggs,
   UpstreamRows,
 } from "./expr.js";
-export type { CellValue, AggFn, AggMeta, CardinalFn, Row, RowGet, RowMeta, UpstreamAggs, UpstreamRows };
+export type {
+  CellValue,
+  AggFn,
+  AggMeta,
+  CardinalFn,
+  Row,
+  RowGet,
+  RowMeta,
+  UpstreamAggs,
+  UpstreamRows,
+};
 
 /**
  * Compiles an expression string into a reusable scope evaluator.
@@ -19,7 +29,9 @@ export type { CellValue, AggFn, AggMeta, CardinalFn, Row, RowGet, RowMeta, Upstr
  *
  * @beta
  */
-export type ExprCompiler<V extends CellValue = CellValue> = (expression: string) => (scope: Record<string, unknown>) => V | V[];
+export type ExprCompiler<V extends CellValue = CellValue> = (
+  expression: string,
+) => (scope: Record<string, unknown>) => V | V[];
 
 /**
  * Converts a table type (column arrays) to a row type (scalar values).
@@ -160,8 +172,8 @@ export class Engine<
   readonly #steps: Step[];
   readonly #compiler: ExprCompiler<Val> | undefined;
 
-  constructor(compiler?: ExprCompiler<Val>)
-  constructor(steps: Step[], compiler?: ExprCompiler<Val>)
+  constructor(compiler?: ExprCompiler<Val>);
+  constructor(steps: Step[], compiler?: ExprCompiler<Val>);
   constructor(stepsOrCompiler?: Step[] | ExprCompiler<Val>, compiler?: ExprCompiler<Val>) {
     if (Array.isArray(stepsOrCompiler)) {
       this.#steps = stepsOrCompiler;
@@ -179,11 +191,11 @@ export class Engine<
       aggs: InputAggs & Aggs & Cards,
       meta: RowMeta,
     ) => V,
-  ): Engine<Input, InputAggs, Val, Cols & Record<Name, V>, Aggs, Cards>
+  ): Engine<Input, InputAggs, Val, Cols & Record<Name, V>, Aggs, Cards>;
   def<Name extends string>(
     name: Name,
     expression: [Input] extends [Record<string, Val[]>] ? string : never,
-  ): Engine<Input, InputAggs, Val, Cols & Record<Name, Val>, Aggs, Cards>
+  ): Engine<Input, InputAggs, Val, Cols & Record<Name, Val>, Aggs, Cards>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   def(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -199,11 +211,11 @@ export class Engine<
       aggs: InputAggs & Aggs & Cards,
       aggMeta: AggMeta,
     ) => V,
-  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, V>, Cards>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, V>, Cards>;
   agg<Name extends string>(
     name: Name,
     expression: [Input] extends [Record<string, Val[]>] ? string : never,
-  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, Val>, Cards>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs & Record<Name, Val>, Cards>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agg(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -228,14 +240,17 @@ export class Engine<
     name: Name,
     fn: (
       cols: (Input & { [K in keyof Cols]: Cols[K][] }) & Record<string, CellValue[]>,
-      aggs: { [K in keyof (InputAggs & Aggs)]: Array<(InputAggs & Aggs)[K]> } & Record<string, CellValue[]>,
+      aggs: { [K in keyof (InputAggs & Aggs)]: Array<(InputAggs & Aggs)[K]> } & Record<
+        string,
+        CellValue[]
+      >,
       cards: Cards & Record<string, CellValue>,
     ) => V,
-  ): Engine<Input, InputAggs, Val, Cols, Aggs, Cards & Record<Name, V>>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs, Cards & Record<Name, V>>;
   cardinal<Name extends string>(
     name: Name,
     expression: [Input] extends [Record<string, Val[]>] ? string : never,
-  ): Engine<Input, InputAggs, Val, Cols, Aggs, Cards & Record<Name, Val>>
+  ): Engine<Input, InputAggs, Val, Cols, Aggs, Cards & Record<Name, Val>>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cardinal(name: string, fnOrExpr: any): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -676,9 +691,7 @@ export class BoundEngine {
       return this.#makeTargetSnapshot(target);
     };
 
-    const boundUpstream = (
-      filter?: (row: Record<string, CellValue>) => boolean,
-    ): UpstreamRows => {
+    const boundUpstream = (filter?: (row: Record<string, CellValue>) => boolean): UpstreamRows => {
       const result: UpstreamRows = {};
       for (let idx = 0; idx < this.#rowIndex; idx++) {
         const snap = this.#makeTargetSnapshot(idx);
@@ -817,9 +830,7 @@ export class BoundEngine {
       return this.#makeTargetSnapshot(target);
     };
 
-    const chainUpstream = (
-      filter?: (row: Record<string, CellValue>) => boolean,
-    ): UpstreamRows => {
+    const chainUpstream = (filter?: (row: Record<string, CellValue>) => boolean): UpstreamRows => {
       const result: UpstreamRows = {};
       for (let idx = 0; idx < this.#rowIndex; idx++) {
         const snap = this.#makeTargetSnapshot(idx);
