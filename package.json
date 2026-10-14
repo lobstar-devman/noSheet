@@ -56,6 +56,7 @@
     "computation",
     "typescript"
   ],
+  "author": "nosheet",
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^9.39.4",
