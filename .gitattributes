@@ -2,3 +2,6 @@
 *.json  linguist-language=JSON-with-Comments
 # Shell scripts run inside Linux containers; keep LF even on Windows checkouts
 *.sh  text eol=lf
+# Rollup output, rebuilt in Docker with LF; keep LF on Windows checkouts so builds leave no diff
+examples/js/invoice-engine.js  text eol=lf
+examples/js/nosheet.esm.js     text eol=lf
